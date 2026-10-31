@@ -265,6 +265,19 @@ export const OfflinePlayer: React.FC<OfflinePlayerProps> = ({
     showIndicator('volume');
   }, []);
 
+  const [isCapsuleMinimized, setIsCapsuleMinimized] = useState(false);
+  const capsuleMinimizeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastDiscreteSpeedRef = useRef<number>(2.0);
+
+  const scheduleCapsuleMinimize = useCallback(() => {
+    if (capsuleMinimizeTimerRef.current) {
+      clearTimeout(capsuleMinimizeTimerRef.current);
+    }
+    capsuleMinimizeTimerRef.current = setTimeout(() => {
+      setIsCapsuleMinimized(true);
+    }, 550);
+  }, []);
+
   // Long Press Fast-Forward Gesture (Speed Capsule HUD)
   const handleLongPressStart = useCallback(() => {
     if (videoRef.current && !isFastForwarding) {
@@ -273,38 +286,42 @@ export const OfflinePlayer: React.FC<OfflinePlayerProps> = ({
       setPlaybackRate(2.0);
       setCapsuleSpeed(2.0);
       setCapsuleProgress(66.66);
+      lastDiscreteSpeedRef.current = 2.0;
+      setIsCapsuleMinimized(false);
       setIsFastForwarding(true);
+      scheduleCapsuleMinimize();
     }
-  }, [isFastForwarding]);
+  }, [isFastForwarding, scheduleCapsuleMinimize]);
 
   const handleLongPressMove = useCallback((deltaX: number) => {
-    const newProgress = Math.max(0, Math.min(100, 66.66 + deltaX * 0.35));
+    const discretePoints = [0.5, 1.0, 2.0, 3.0];
+    const stepOffset = Math.round(deltaX / 42);
+    const snappedIdx = Math.max(0, Math.min(discretePoints.length - 1, 2 + stepOffset));
+    const finalSpeed = discretePoints[snappedIdx];
+    const snappedProgress = (snappedIdx / (discretePoints.length - 1)) * 100;
 
-    let calcSpeed = 1.0;
-    if (newProgress <= 33.33) {
-      calcSpeed = 0.5 + (newProgress / 33.33) * 0.5;
-    } else if (newProgress <= 66.66) {
-      calcSpeed = 1.0 + ((newProgress - 33.33) / 33.33) * 1.0;
-    } else {
-      calcSpeed = 2.0 + ((newProgress - 66.66) / 33.34) * 1.0;
+    if (finalSpeed !== lastDiscreteSpeedRef.current) {
+      lastDiscreteSpeedRef.current = finalSpeed;
+      setIsCapsuleMinimized(false);
+      scheduleCapsuleMinimize();
     }
 
-    let finalSpeed = Math.round(calcSpeed * 10) / 10;
-    if (Math.abs(calcSpeed - 0.5) < 0.08) finalSpeed = 0.5;
-    else if (Math.abs(calcSpeed - 1.0) < 0.08) finalSpeed = 1.0;
-    else if (Math.abs(calcSpeed - 2.0) < 0.08) finalSpeed = 2.0;
-    else if (Math.abs(calcSpeed - 3.0) < 0.08) finalSpeed = 3.0;
-
     setCapsuleSpeed(finalSpeed);
-    setCapsuleProgress(newProgress);
+    setCapsuleProgress(snappedProgress);
     if (videoRef.current) {
       videoRef.current.playbackRate = finalSpeed;
     }
-  }, []);
+  }, [scheduleCapsuleMinimize]);
 
   const handleLongPressEnd = useCallback(() => {
+    if (capsuleMinimizeTimerRef.current) {
+      clearTimeout(capsuleMinimizeTimerRef.current);
+      capsuleMinimizeTimerRef.current = null;
+    }
     if (isFastForwarding) {
       setIsFastForwarding(false);
+      setIsCapsuleMinimized(false);
+      lastDiscreteSpeedRef.current = 2.0;
       const restored = prevSpeedRef.current || 1.0;
       setPlaybackRate(restored);
       if (videoRef.current) {
@@ -489,6 +506,7 @@ export const OfflinePlayer: React.FC<OfflinePlayerProps> = ({
         onLongPressStart={handleLongPressStart}
         onLongPressMove={handleLongPressMove}
         onLongPressEnd={handleLongPressEnd}
+        onDoubleTapCenter={handlePlayPause}
         onDoubleTapRewind={handleRewind10}
         onDoubleTapForward={handleForward10}
       >
@@ -709,6 +727,7 @@ export const OfflinePlayer: React.FC<OfflinePlayerProps> = ({
           visible={isFastForwarding}
           speed={capsuleSpeed}
           progress={capsuleProgress}
+          minimized={isCapsuleMinimized}
         />
 
         {/* FULL CONTROLS OVERLAY */}

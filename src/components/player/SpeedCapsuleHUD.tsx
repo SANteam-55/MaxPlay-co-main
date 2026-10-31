@@ -5,157 +5,144 @@ interface SpeedCapsuleHUDProps {
   visible: boolean;
   speed: number;
   progress: number;
+  minimized?: boolean;
 }
+
+export const DISCRETE_HOLD_SPEEDS = [0.5, 1.0, 2.0, 3.0];
 
 export const SpeedCapsuleHUD: React.FC<SpeedCapsuleHUDProps> = ({
   visible,
   speed,
-  progress,
+  minimized = false,
 }) => {
   if (!visible) return null;
 
-  // Determine styling based on speed range
-  const isSuperFast = speed > 2.2;
-  const isFast = speed > 1.2 && speed <= 2.2;
-  const isNormal = speed >= 0.9 && speed <= 1.2;
-  const isSlow = speed < 0.9;
+  // Snap strictly to nearest discrete speed point (0.5x, 1.0x, 2.0x, 3.0x)
+  const snappedSpeed = DISCRETE_HOLD_SPEEDS.reduce((prev, curr) =>
+    Math.abs(curr - speed) < Math.abs(prev - speed) ? curr : prev
+  );
 
-  let speedLabel = `${speed.toFixed(1)}x Fast`;
-  let themeColor = 'purple';
+  // Calculate discrete progress across the 4 points (0%, 33.33%, 66.67%, 100%)
+  const pointIndex = DISCRETE_HOLD_SPEEDS.indexOf(snappedSpeed);
+  const discreteProgress =
+    pointIndex >= 0
+      ? (pointIndex / (DISCRETE_HOLD_SPEEDS.length - 1)) * 100
+      : 66.67;
 
+  const isSuperFast = snappedSpeed >= 2.8;
+  const isFast = snappedSpeed > 1.2 && snappedSpeed < 2.8;
+  const isNormal = snappedSpeed >= 0.9 && snappedSpeed <= 1.2;
+  const isSlow = snappedSpeed < 0.9;
+
+  let speedLabel = `${snappedSpeed.toFixed(1)}x Fast`;
   if (isSuperFast) {
-    speedLabel = `${speed.toFixed(1)}x Super Fast`;
-    themeColor = 'amber';
+    speedLabel = '3.0x Max';
   } else if (isFast) {
-    speedLabel = `${speed.toFixed(1)}x Fast`;
-    themeColor = 'purple';
+    speedLabel = '2.0x Fast';
   } else if (isNormal) {
     speedLabel = '1.0x Normal';
-    themeColor = 'white';
   } else if (isSlow) {
-    speedLabel = `${speed.toFixed(1)}x Slow`;
-    themeColor = 'cyan';
+    speedLabel = '0.5x Slow';
   }
 
+  const compactText = Number.isInteger(snappedSpeed)
+    ? `${snappedSpeed}x`
+    : `${snappedSpeed.toFixed(1)}x`;
+
   return (
-    <div className="absolute top-6 sm:top-8 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-in fade-in zoom-in-95 duration-200 select-none">
-      <div className="flex flex-col items-center gap-2">
-        {/* Live Active Speed Badge */}
-        <div
-          className={`px-4 py-1.5 rounded-full border shadow-xl backdrop-blur-2xl flex items-center gap-2 transition-all duration-150 ${
-            isSuperFast
-              ? 'bg-amber-950/85 border-amber-400/70 shadow-[0_0_20px_rgba(245,158,11,0.5)] text-amber-300'
-              : isFast
-              ? 'bg-purple-950/85 border-purple-400/70 shadow-[0_0_20px_rgba(168,85,247,0.5)] text-purple-300'
-              : isNormal
-              ? 'bg-black/85 border-white/30 shadow-[0_0_15px_rgba(0,0,0,0.6)] text-white'
-              : 'bg-cyan-950/85 border-cyan-400/70 shadow-[0_0_20px_rgba(6,182,212,0.5)] text-cyan-300'
-          }`}
-        >
-          {isSuperFast ? (
-            <Zap className="w-4 h-4 fill-amber-400 text-amber-400 animate-pulse" />
-          ) : isFast ? (
-            <FastForward className="w-4 h-4 fill-purple-400 text-purple-400" />
+    <div className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none">
+      {minimized ? (
+        /* Minimized subtle near-invisible box at top so overall video view is never blocked */
+        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-black/20 border border-white/10 backdrop-blur-[2px] transition-all duration-200 animate-in fade-in duration-150">
+          {isSlow ? (
+            <Rewind className="w-3 h-3 text-cyan-300/90 animate-pulse" />
           ) : isNormal ? (
-            <Play className="w-3.5 h-3.5 fill-white text-white" />
+            <Play className="w-2.5 h-2.5 text-white/90 fill-white/90" />
           ) : (
-            <Rewind className="w-4 h-4 fill-cyan-400 text-cyan-400" />
+            <FastForward className="w-3 h-3 text-purple-300/90 animate-pulse" />
           )}
-          <span className="font-black text-xs sm:text-sm tracking-wide">
-            {speedLabel}
+          <span className="font-extrabold text-[11px] tracking-wider text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)] tabular-nums">
+            {compactText}
           </span>
         </div>
+      ) : (
+        /* Compact Discrete Speed Pill */
+        <div className="flex flex-col items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-[210px] sm:w-[235px] bg-black/75 backdrop-blur-xl border border-white/20 rounded-2xl px-3.5 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.7)] flex flex-col gap-1.5">
+            {/* Compact Header Row */}
+            <div className="flex items-center justify-between px-0.5">
+              <div className="flex items-center gap-1.5">
+                {isSuperFast ? (
+                  <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400 animate-pulse" />
+                ) : isFast ? (
+                  <FastForward className="w-3.5 h-3.5 fill-purple-400 text-purple-400 animate-pulse" />
+                ) : isNormal ? (
+                  <Play className="w-3 h-3 fill-white text-white" />
+                ) : (
+                  <Rewind className="w-3.5 h-3.5 fill-cyan-400 text-cyan-400 animate-pulse" />
+                )}
+                <span className="font-black text-xs text-white tracking-wide">
+                  {speedLabel}
+                </span>
+              </div>
+              <span className="text-[9px] text-white/55 font-semibold">
+                Slide ◀ ▶
+              </span>
+            </div>
 
-        {/* PlayIt-Style Horizontal Pill / Capsule Bar */}
-        <div className="w-[270px] sm:w-[320px] bg-black/80 backdrop-blur-2xl border border-white/25 rounded-full px-4 py-3 shadow-[0_12px_36px_rgba(0,0,0,0.75)] flex flex-col gap-2">
-          {/* Slider Track with Sliding Glowing Dot */}
-          <div className="relative w-full h-2 bg-white/15 rounded-full flex items-center">
-            {/* Active progress fill */}
-            <div
-              className={`h-full rounded-full transition-all duration-75 ${
-                isSuperFast
-                  ? 'bg-gradient-to-r from-purple-500 via-orange-500 to-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.7)]'
-                  : isFast
-                  ? 'bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.7)]'
-                  : isNormal
-                  ? 'bg-white/40'
-                  : 'bg-gradient-to-r from-cyan-400 to-blue-500 shadow-[0_0_10px_rgba(6,182,212,0.7)]'
-              }`}
-              style={{ width: `${progress}%` }}
-            />
-
-            {/* Sliding Dot (Thumb Indicator) that follows touch position */}
-            <div
-              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white transition-all duration-75 flex items-center justify-center shadow-lg ${
-                isSuperFast
-                  ? 'border-2 border-amber-400 shadow-[0_0_14px_#fbbf24] ring-2 ring-amber-400/40'
-                  : isFast
-                  ? 'border-2 border-purple-400 shadow-[0_0_14px_#c084fc] ring-2 ring-purple-400/40'
-                  : isNormal
-                  ? 'border-2 border-white shadow-[0_0_10px_#ffffff]'
-                  : 'border-2 border-cyan-400 shadow-[0_0_14px_#38bdf8] ring-2 ring-cyan-400/40'
-              }`}
-              style={{ left: `${progress}%` }}
-            >
+            {/* Discrete Point Track */}
+            <div className="relative w-full h-1.5 bg-white/15 rounded-full flex items-center my-0.5">
+              {/* Active progress fill */}
               <div
-                className={`w-1.5 h-1.5 rounded-full ${
+                className={`h-full rounded-full transition-all duration-150 ${
                   isSuperFast
-                    ? 'bg-amber-500'
+                    ? 'bg-gradient-to-r from-purple-500 via-orange-500 to-amber-400'
                     : isFast
-                    ? 'bg-purple-600'
+                    ? 'bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1]'
                     : isNormal
-                    ? 'bg-zinc-800'
-                    : 'bg-cyan-600'
+                    ? 'bg-white/50'
+                    : 'bg-gradient-to-r from-cyan-400 to-blue-500'
                 }`}
+                style={{ width: `${discreteProgress}%` }}
               />
-            </div>
-          </div>
 
-          {/* Speed Milestones: 0.5x (Slow) ➔ 1.0x (Normal) ➔ 2.0x (Fast) ➔ 3.0x (Super Fast) */}
-          <div className="flex justify-between items-center text-[10px] sm:text-[11px] font-bold px-0.5 select-none">
-            <div
-              className={`flex flex-col items-center transition-transform duration-150 ${
-                isSlow ? 'scale-110 text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.9)]' : 'text-white/50'
-              }`}
-            >
-              <span>0.5x</span>
-              <span className="text-[8px] font-medium -mt-0.5">Slow</span>
-            </div>
-
-            <div
-              className={`flex flex-col items-center transition-transform duration-150 ${
-                isNormal ? 'scale-110 text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.9)]' : 'text-white/50'
-              }`}
-            >
-              <span>1.0x</span>
-              <span className="text-[8px] font-medium -mt-0.5">Normal</span>
+              {/* Discrete Snap Point Dots */}
+              {DISCRETE_HOLD_SPEEDS.map((pt, idx) => {
+                const pos = (idx / (DISCRETE_HOLD_SPEEDS.length - 1)) * 100;
+                const isSelected = Math.abs(snappedSpeed - pt) < 0.05;
+                return (
+                  <div
+                    key={pt}
+                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full transition-all duration-150 ${
+                      isSelected
+                        ? 'w-3 h-3 bg-white border-2 border-[#8B5CF6] shadow-[0_0_10px_#8B5CF6]'
+                        : 'w-1.5 h-1.5 bg-white/35'
+                    }`}
+                    style={{ left: `${pos}%` }}
+                  />
+                );
+              })}
             </div>
 
-            <div
-              className={`flex flex-col items-center transition-transform duration-150 ${
-                isFast ? 'scale-110 text-purple-300 drop-shadow-[0_0_8px_rgba(168,85,247,0.9)]' : 'text-white/50'
-              }`}
-            >
-              <span>2.0x</span>
-              <span className="text-[8px] font-medium -mt-0.5">Fast</span>
-            </div>
-
-            <div
-              className={`flex flex-col items-center transition-transform duration-150 ${
-                isSuperFast ? 'scale-110 text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.9)]' : 'text-white/50'
-              }`}
-            >
-              <span>3.0x</span>
-              <span className="text-[8px] font-medium -mt-0.5">Max</span>
+            {/* Speed Milestones: 0.5x ➔ 1.0x ➔ 2.0x ➔ 3.0x */}
+            <div className="flex justify-between items-center text-[9px] font-bold px-0.5 select-none">
+              <span className={isSlow ? 'text-cyan-300 font-black scale-105' : 'text-white/45'}>
+                0.5x
+              </span>
+              <span className={isNormal ? 'text-white font-black scale-105' : 'text-white/45'}>
+                1.0x
+              </span>
+              <span className={isFast ? 'text-purple-300 font-black scale-105' : 'text-white/45'}>
+                2.0x
+              </span>
+              <span className={isSuperFast ? 'text-amber-300 font-black scale-105' : 'text-white/45'}>
+                3.0x
+              </span>
             </div>
           </div>
         </div>
-
-        {/* Action Hint */}
-        <span className="text-[9px] sm:text-[10px] text-white/70 font-medium tracking-wider drop-shadow-md">
-          Slide left/right to adjust • Release to normal
-        </span>
-      </div>
+      )}
     </div>
   );
 };
+

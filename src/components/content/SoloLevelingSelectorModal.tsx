@@ -131,24 +131,25 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
     const clean = q.toLowerCase().trim();
     const serverMatch = q.match(/\[(S1|S2)\]/i);
     const serverTag = serverMatch ? serverMatch[1].toUpperCase() : undefined;
+    const serverLabel = serverTag === 'S1' ? 'Server 1' : serverTag === 'S2' ? 'Server 2' : undefined;
     const baseQ = q.replace(/\s*\[(S1|S2)\]/i, '').trim();
 
     if (clean === 'auto') {
-      return { name: 'Auto (Smart)', badge: 'ADAPTIVE', serverTag: undefined, baseQ: 'auto' };
+      return { name: 'Auto (Smart)', badge: 'ADAPTIVE', serverTag: undefined, serverLabel: undefined, baseQ: 'auto' };
     }
     if (clean.includes('1080')) {
-      return { name: '1080p Full HD', badge: serverTag ? `SWITCH TO ${serverTag}` : 'ULTRA HD', serverTag, baseQ };
+      return { name: '1080p Full HD', badge: 'ULTRA HD', serverTag, serverLabel, baseQ };
     }
     if (clean.includes('720')) {
-      return { name: '720p HD Ready', badge: serverTag ? `SWITCH TO ${serverTag}` : 'BALANCED', serverTag, baseQ };
+      return { name: '720p HD Ready', badge: 'BALANCED', serverTag, serverLabel, baseQ };
     }
     if (clean.includes('480')) {
-      return { name: '480p Standard', badge: serverTag ? `SWITCH TO ${serverTag}` : 'SMOOTH', serverTag, baseQ };
+      return { name: '480p Standard', badge: 'SMOOTH', serverTag, serverLabel, baseQ };
     }
     if (clean.includes('360')) {
-      return { name: '360p Data Saver', badge: serverTag ? `SWITCH TO ${serverTag}` : 'FAST LOAD', serverTag, baseQ };
+      return { name: '360p Data Saver', badge: 'FAST LOAD', serverTag, serverLabel, baseQ };
     }
-    return { name: baseQ.toUpperCase(), badge: serverTag ? `SWITCH TO ${serverTag}` : 'STREAM', serverTag, baseQ };
+    return { name: baseQ.toUpperCase(), badge: 'STREAM', serverTag, serverLabel, baseQ };
   };
 
   return (
@@ -323,16 +324,11 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                               : 'bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 group-hover:border-emerald-300'
                           }`}
                         >
-                          {meta.serverTag ? meta.serverTag : q.toLowerCase() === 'auto' ? 'AI' : `0${index}`}
+                          {q.toLowerCase() === 'auto' ? 'AI' : `0${index}`}
                         </div>
 
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {meta.serverTag && (
-                              <span className="text-[9px] font-mono font-black px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-300 border border-amber-400/50">
-                                {meta.serverTag}
-                              </span>
-                            )}
                             <span className="font-bold text-[11px] sm:text-xs text-white tracking-wide truncate">
                               {meta.name}
                             </span>
@@ -340,13 +336,16 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                               className={`text-[7px] font-mono px-1 py-0.5 rounded font-black tracking-wider ${
                                 isSelected
                                   ? 'bg-emerald-400/25 text-emerald-200 border border-emerald-400/50 shadow-[0_0_4px_rgba(16,185,129,0.3)]'
-                                  : meta.serverTag
-                                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                                   : 'bg-white/5 text-white/50 border border-white/10'
                               }`}
                             >
                               {meta.badge}
                             </span>
+                            {meta.serverLabel && (
+                              <span className="text-[8px] font-mono font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                                {meta.serverLabel}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -363,7 +362,7 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                               ? 'text-amber-300/80 group-hover:text-amber-200 group-hover:border-amber-500/40'
                               : 'text-emerald-400/50 group-hover:text-emerald-300 group-hover:border-emerald-500/40'
                           }`}>
-                            {meta.serverTag ? `[ ${meta.serverTag} ]` : '[ SELECT ]'}
+                            [ SELECT ]
                           </div>
                         )}
                       </div>

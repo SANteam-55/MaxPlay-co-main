@@ -229,7 +229,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             e.stopPropagation();
             onPlayPause();
           }}
-          className="flex h-15 w-15 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white shadow-2xl shadow-purple-600/50 border border-purple-400/40 transition-all hover:scale-105 active:scale-90 cursor-pointer"
+          className="flex h-15 w-15 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-black/60 hover:bg-black/85 border border-white/25 hover:border-white/50 text-white shadow-xl backdrop-blur-sm transition-all hover:scale-110 active:scale-90 cursor-pointer"
           title={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? (

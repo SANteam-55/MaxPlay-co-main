@@ -224,6 +224,45 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
       ? searchConfig.popularSearches
       : [];
 
+  // Show only the top 5 items in "Everyone is searching" pills; items 6, 7, 8... rotate inside the Search Bar
+  const topFiveTrendingPills = trendingPills.slice(0, 5);
+  const rotatingSearchItems = trendingPills.length > 5 ? trendingPills.slice(5) : trendingPills;
+
+  const HOT_TABS: { id: 'movies' | 'series' | 'short_tv' | 'music'; label: string }[] = [
+    { id: 'movies', label: 'Hot Movies' },
+    { id: 'series', label: 'Hot Series' },
+    { id: 'short_tv', label: 'Hot Short TV' },
+    { id: 'music', label: 'Hot Music' },
+  ];
+
+  const hotSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleHotTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      hotSwipeStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+      };
+    }
+  };
+
+  const handleHotTouchEnd = (e: React.TouchEvent) => {
+    if (!hotSwipeStartRef.current || e.changedTouches.length === 0) return;
+    const dx = e.changedTouches[0].clientX - hotSwipeStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - hotSwipeStartRef.current.y;
+    hotSwipeStartRef.current = null;
+
+    // Trigger horizontal tab switch if horizontal swipe > 45px and dominates vertical scroll
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+      const currentIdx = HOT_TABS.findIndex((t) => t.id === activeHotTab);
+      if (dx < 0 && currentIdx < HOT_TABS.length - 1) {
+        setActiveHotTab(HOT_TABS[currentIdx + 1].id);
+      } else if (dx > 0 && currentIdx > 0) {
+        setActiveHotTab(HOT_TABS[currentIdx - 1].id);
+      }
+    }
+  };
+
   // Hot lists selection from real Firestore items
   const hotListItems = contentList
     .filter(item => item.searchHotSection === activeHotTab)
@@ -271,6 +310,11 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
             }}
             onSubmit={handleSearchSubmit}
             placeholder={isListening ? 'Listening... Speak now' : dynamicPlaceholder}
+            rotatingPlaceholders={isListening ? [] : rotatingSearchItems}
+            onSelectRotatingPlaceholder={(term) => {
+              setQuery(term);
+              saveRecentSearch(term);
+            }}
             autoFocus
           />
         </div>
@@ -410,7 +454,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
             </div>
           )}
 
-          {/* Trending Searches Pills */}
+          {/* Trending Searches Pills (Top 5 Only; items 6+ rotate inside SearchBar) */}
           <div>
             <SectionHeader
               title="Everyone is searching"
@@ -426,14 +470,14 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
               </div>
             ) : (
               <div className="flex flex-wrap gap-2 mt-1">
-                {trendingPills.map((pill) => (
+                {topFiveTrendingPills.map((pill) => (
                   <button
                     key={pill}
                     onClick={() => {
                       setQuery(pill);
                       saveRecentSearch(pill);
                     }}
-                    className="flex cursor-pointer items-center rounded-full bg-[#1C1C1E] px-4 py-2 text-xs font-semibold text-[#A1A1AA] transition hover:bg-[#8B5CF6] hover:text-white active:scale-95"
+                    className="flex cursor-pointer items-center rounded-full bg-[#1C1C1E] border border-white/5 px-4 py-2 text-xs font-semibold text-[#A1A1AA] transition hover:bg-gradient-to-r hover:from-[#A855F7] hover:to-[#6366F1] hover:text-white active:scale-95"
                   >
                     {pill}
                   </button>
@@ -442,39 +486,49 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
             )}
           </div>
 
-          {/* Hot Lists Tabbed */}
-          <div>
-            <div className="flex items-center gap-6 border-b border-[#1C1C1E] pb-2 overflow-x-auto scrollbar-none">
-              {[
-                { id: 'movies', label: 'Hot Movies' },
-                { id: 'series', label: 'Hot Series' },
-                { id: 'short_tv', label: 'Hot Short TV' },
-                { id: 'music', label: 'Hot Music' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveHotTab(tab.id as any)}
-                  className={`py-1 text-xs font-semibold whitespace-nowrap transition border-b-2 cursor-pointer ${
-                    activeHotTab === tab.id
-                      ? 'border-[#8B5CF6] text-white'
-                      : 'border-transparent text-[#6B7280] hover:text-white'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+          {/* Hot Lists Tabbed inside ContentDetailScreen-styled Glassmorphic Plate with Finger Swipe */}
+          <div
+            onTouchStart={handleHotTouchStart}
+            onTouchEnd={handleHotTouchEnd}
+            className="rounded-2xl bg-gradient-to-b from-[#16161d]/90 to-[#0e0e13]/90 border border-white/10 backdrop-blur-xl shadow-2xl p-4 relative overflow-hidden"
+          >
+            {/* Subtle Ambient Top Glow inside Plate */}
+            <div className="pointer-events-none absolute -top-12 left-1/2 -translate-x-1/2 h-24 w-3/4 rounded-full bg-purple-600/15 blur-2xl" />
+
+            <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/10 pb-2.5 overflow-x-auto scrollbar-none">
+              <div className="flex items-center gap-5">
+                {HOT_TABS.map((tab) => {
+                  const isActive = activeHotTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveHotTab(tab.id)}
+                      className={`relative py-1 text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                        isActive
+                          ? 'text-white'
+                          : 'text-[#8E8E93] hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                      {isActive && (
+                        <span className="absolute -bottom-[11px] left-0 right-0 h-[2.5px] rounded-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] shadow-[0_0_8px_rgba(139,92,246,0.8)]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Hot Items List */}
-            <div className="mt-3 flex flex-col gap-2.5">
+            <div className="relative z-10 mt-3.5 flex flex-col gap-2.5">
               {/* NATIVE BANNER AD */}
               <NativeBanner />
-              
+
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-xl bg-[#121212] p-2.5">
+                  <div key={i} className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
                     <LoadingSkeleton width={24} height={24} radius="6px" />
-                    <LoadingSkeleton width={50} height={68} radius="8px" className="shrink-0" />
+                    <LoadingSkeleton width={52} height={70} radius="8px" className="shrink-0" />
                     <div className="flex-1 flex flex-col gap-1.5">
                       <LoadingSkeleton width="70%" height={14} radius="4px" />
                       <LoadingSkeleton width="50%" height={12} radius="4px" />
@@ -485,40 +539,44 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
               ) : hotListItems.map((item, index) => (
                 <div
                   key={`${item.id}-${index}`}
-                  onClick={() => onSelectContent?.(item)}
-                  className="flex cursor-pointer items-center justify-between rounded-xl bg-[#121212] p-2.5 transition hover:bg-[#1C1C1E]"
+                  onClick={() => handleContentClick(item)}
+                  className="group flex cursor-pointer items-center justify-between rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-purple-500/30 p-2.5 transition-all duration-200 shadow-sm active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-3 overflow-hidden">
                     {/* Rank Badge */}
                     <RankBadge rank={item.searchHotPosition || index + 1} />
 
                     {/* Thumbnail */}
-                    <img
-                      src={item.posterUrl || undefined}
-                      alt={item.title}
-                      className="h-[68px] w-[50px] flex-shrink-0 rounded-lg object-cover"
-                    />
+                    <div className="relative h-[70px] w-[52px] flex-shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#121216] shadow-md">
+                      <img
+                        src={item.posterUrl || undefined}
+                        alt={item.title}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    </div>
 
                     {/* Meta info */}
                     <div className="flex flex-col text-left overflow-hidden">
-                      <h4 className="line-clamp-1 text-sm font-semibold text-white">
+                      <h4 className="line-clamp-1 text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
                         {item.title}
                       </h4>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7280]">
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-[#9CA3AF]">
                         <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                         <span className="text-amber-400 font-bold">{item.rating}</span>
                         <span>•</span>
                         <span>{item.year}</span>
                         <span>•</span>
-                        <span>{item.country}</span>
+                        <span className="truncate">{item.country}</span>
                       </div>
                       <p className="mt-0.5 line-clamp-1 text-[11px] text-[#A1A1AA]">
-                        {item.genres?.join(', ')}
+                        {item.genres?.join(' • ')}
                       </p>
                     </div>
                   </div>
 
-                  <Play className="h-5 w-5 text-[#6B7280] flex-shrink-0 ml-2 hover:text-[#8B5CF6]" />
+                  <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/5 border border-white/10 text-[#A1A1AA] group-hover:bg-gradient-to-r group-hover:from-[#A855F7] group-hover:to-[#6366F1] group-hover:text-white group-hover:border-transparent transition-all">
+                    <Play className="h-4 w-4 fill-current ml-0.5" />
+                  </div>
                 </div>
               ))}
             </div>

@@ -270,7 +270,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
             <div className="absolute bottom-0 inset-x-0 z-30 h-0.5 bg-white/20">
               <div
                 style={{ width: `${progressPercent}%` }}
-                className="h-full bg-[#8B5CF6]"
+                className="h-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1]"
               />
             </div>
           </div>
@@ -286,17 +286,17 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
           className="absolute h-full bg-white/30 transition-all duration-300"
         />
 
-        {/* Progress Fill Bar */}
+        {/* Progress Fill Bar with MaxPlay Signature Purple Gradient */}
         <div
           style={{ width: `${progressPercent}%` }}
-          className="absolute h-full bg-[#8B5CF6] z-10"
+          className="absolute h-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] shadow-[0_0_10px_rgba(139,92,246,0.6)] z-10"
         />
       </div>
 
       {/* Scrubber Thumb Knob */}
       <div
         style={{ left: `${progressPercent}%` }}
-        className={`absolute -translate-x-1/2 h-3.5 w-3.5 rounded-full bg-[#8B5CF6] border-2 border-white shadow-lg transition-transform duration-100 ${
+        className={`absolute -translate-x-1/2 h-3.5 w-3.5 rounded-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] border-2 border-white shadow-[0_0_10px_rgba(139,92,246,0.8)] transition-transform duration-100 ${
           isHovered || isDragging ? 'scale-125' : 'scale-100'
         }`}
       />

@@ -61,6 +61,7 @@ import { SoloLevelingSelectorModal } from '../../components/content/SoloLeveling
 import { NativeBanner } from '../../components/ads/NativeBanner';
 import { adManager } from '../../services/adService';
 import { STORAGE_KEYS } from '../../utils/constants';
+import { useGeneralSettings } from '../../hooks/useGeneralSettings';
 
 interface ContentDetailScreenProps {
   content: ContentItem | null;
@@ -599,6 +600,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     return map;
   });
 
+  const { apkDownloadUrl } = useGeneralSettings();
   const [isMyList, setIsMyList] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [offlineVideoUrl, setOfflineVideoUrl] = useState<string | null>(null);
@@ -2360,22 +2362,77 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
   const handleShare = async () => {
     const shareTitle = content.title || 'MaxPlay';
-    const shareUrl = window.location.href || 'https://maxplay.app';
-    const shareText = `Watch ${shareTitle} in HD on MaxPlay!`;
+    const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://maxplay.app';
+    const deepLinkUrl = `${origin}/?watch=${encodeURIComponent(content.id)}`;
+    const appDownloadUrl = (apkDownloadUrl || '').trim() || origin;
+
+    const typeLabel = (content.type || 'movie').toUpperCase();
+    const ratingLabel = content.rating ? `⭐ ${content.rating}` : '';
+    const yearLabel = content.year ? `📅 ${content.year}` : '';
+    const metaRow = [typeLabel, ratingLabel, yearLabel].filter(Boolean).join(' • ');
+    const genresRow = Array.isArray(content.genres) && content.genres.length > 0
+      ? `🎭 ${content.genres.slice(0, 3).join(', ')}`
+      : '';
+
+    const shareCardLines = [
+      `🎬 *${shareTitle}* — MaxPlay Official`,
+      metaRow,
+      genresRow,
+      '',
+      `▶️ Watch Directly on MaxPlay:`,
+      deepLinkUrl,
+      '',
+      `📲 Download MaxPlay App:`,
+      appDownloadUrl,
+    ].filter((line, idx, arr) => line !== '' || (idx > 0 && arr[idx - 1] !== ''));
+
+    const shareText = shareCardLines.join('\n');
 
     // 1. Native Android Share Sheet inside APK
-    if (NativeBridgeService.shareContentNative(shareTitle, shareText, shareUrl)) {
+    if (NativeBridgeService.shareContentNative(shareTitle, shareText, deepLinkUrl)) {
       return;
     }
 
-    // 2. Web Share API (Mobile Browsers)
+    // 2. Web Share API (with optional poster image card attachment when supported)
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
-        await navigator.share({
-          title: shareTitle,
-          text: shareText,
-          url: shareUrl,
-        });
+        let sharedWithPoster = false;
+        const posterImgUrl = content.posterUrl || content.backdropUrl;
+        if (posterImgUrl && typeof navigator.canShare === 'function') {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1800);
+            const resp = await fetch(posterImgUrl, { signal: controller.signal, mode: 'cors' });
+            clearTimeout(timeoutId);
+            if (resp.ok) {
+              const blob = await resp.blob();
+              if (blob.size > 0 && blob.type.startsWith('image/')) {
+                const ext = blob.type.includes('png') ? 'png' : 'jpg';
+                const safeName = shareTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'maxplay_poster';
+                const posterFile = new File([blob], `${safeName}.${ext}`, { type: blob.type });
+                if (navigator.canShare({ files: [posterFile] })) {
+                  await navigator.share({
+                    title: `${shareTitle} | MaxPlay`,
+                    text: shareText,
+                    url: deepLinkUrl,
+                    files: [posterFile],
+                  });
+                  sharedWithPoster = true;
+                }
+              }
+            }
+          } catch {
+            // CORS or network timeout on poster fetch — fall back to standard share below
+          }
+        }
+
+        if (!sharedWithPoster) {
+          await navigator.share({
+            title: `${shareTitle} | MaxPlay`,
+            text: shareText,
+            url: deepLinkUrl,
+          });
+        }
         return;
       } catch (err: any) {
         if (err?.name === 'AbortError') return;
@@ -2383,11 +2440,10 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     }
 
     // 3. Reliable Clipboard + Fallback Copy with Toast
-    const fullCopyText = `${shareText}\n${shareUrl}`;
     let copied = false;
     try {
       if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(fullCopyText);
+        await navigator.clipboard.writeText(shareText);
         copied = true;
       }
     } catch {}
@@ -2395,7 +2451,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     if (!copied) {
       try {
         const textArea = document.createElement('textarea');
-        textArea.value = fullCopyText;
+        textArea.value = shareText;
         textArea.style.position = 'fixed';
         textArea.style.opacity = '0';
         document.body.appendChild(textArea);
@@ -2406,8 +2462,20 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       } catch {}
     }
 
-    setToastMessage('Share link copied to clipboard!');
+    setToastMessage('Share card & Watch link copied!');
     setTimeout(() => setToastMessage(null), 2400);
+  };
+
+  const scrollToTopIfNotFullscreen = () => {
+    const isFs = Boolean(
+      (window as any).__isMaxPlayPlayerFullscreen ||
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      (document as any).mozFullScreenElement
+    );
+    if (!isFs) {
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleNextEpisode = () => {
@@ -2424,7 +2492,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         // Carry over current language/quality instead of overriding unless missing
         if (saved?.language && !activeLanguage) setActiveLanguage(saved.language);
         if (saved?.quality && !activeQuality) setActiveQuality(saved.quality);
-        scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollToTopIfNotFullscreen();
       }
       return;
     }
@@ -2440,7 +2508,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       // Carry over current language/quality instead of overriding unless missing
       if (saved?.language && !activeLanguage) setActiveLanguage(saved.language);
       if (saved?.quality && !activeQuality) setActiveQuality(saved.quality);
-      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTopIfNotFullscreen();
       return;
     }
 
@@ -2461,7 +2529,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       setPlaybackPosition(saved?.time || 0);
       if (saved?.language) setActiveLanguage(saved.language);
       if (saved?.quality) setActiveQuality(saved.quality);
-      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTopIfNotFullscreen();
     } else if (seasonsList.length > selectedSeasonIndex + 1) {
       const nextSeasonIdx = selectedSeasonIndex + 1;
       setSelectedSeasonIndex(nextSeasonIdx);
@@ -2473,7 +2541,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       setPlaybackPosition(saved?.time || 0);
       if (saved?.language) setActiveLanguage(saved.language);
       if (saved?.quality) setActiveQuality(saved.quality);
-      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTopIfNotFullscreen();
     }
   };
 
@@ -2817,7 +2885,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     setPlaybackPosition(targetSaved?.time || 0);
     if (targetSaved?.language) setActiveLanguage(targetSaved.language);
     if (targetSaved?.quality) setActiveQuality(targetSaved.quality);
-    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToTopIfNotFullscreen();
   }, [playbackPosition, selectedSeasonIndex, partProgressMap, saveProgressNow]);
 
   const saveProgressOnLeave = useCallback(() => {
@@ -2905,7 +2973,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
           return (
             <InlinePlayer
-              key={`${content.id}-${currentPartKey}-${selectedServer}`}
+              key={content.id}
               streamKey={`${content.id}-${currentPartKey}-${selectedServer}`}
               videoUrl={playerVideoUrl}
               qualityLinks={playerQualityLinks}

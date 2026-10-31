@@ -59,7 +59,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     message: string;
   } | null>(null);
   const { heroBanner, trending, cinema, forYou, categories, screensCategories, homeRowsByScreen, contentList, loading } = useContent();
+  const hotTabs = useMemo<string[]>(() => {
+    const customTabs = (homeRowsByScreen as any)?.__tabsList;
+    if (Array.isArray(customTabs) && customTabs.length > 0) {
+      return customTabs.filter((t) => typeof t === 'string' && t.trim().length > 0);
+    }
+    return CATEGORY_TABS;
+  }, [homeRowsByScreen]);
+
   const [activeTab, setActiveTab] = useState('Trending');
+
+  useEffect(() => {
+    if (hotTabs.length > 0 && !hotTabs.includes(activeTab)) {
+      setActiveTab(hotTabs[0]);
+    }
+  }, [hotTabs, activeTab]);
 
   // Automatically show APK Update popup when a newer version is available in Admin messages/settings, plus periodic reminders until updated
   useEffect(() => {
@@ -397,7 +411,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           {/* Hot Tabs */}
           <div className="flex items-center gap-6 mt-3 overflow-x-auto scrollbar-none pl-1">
-            {CATEGORY_TABS.map((tab) => {
+            {hotTabs.map((tab) => {
               const isActive = activeTab === tab;
               return (
                 <button
@@ -715,7 +729,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           } else if ((row.style === 'landscape_text' || row.style === 'landscape') && rowContent.some((item: any) => item.isCollection)) {
             rowContent = rowContent.filter((item: any) => item.isCollection);
           }
-          if (rowContent.length === 0) return null;
+          if (rowContent.length === 0 && row.style !== 'continue_watching' && row.style !== 'network_grid' && row.style !== 'networks') return null;
 
           let icon = <Sparkles className="h-5 w-5 text-[#8B5CF6]" />;
           

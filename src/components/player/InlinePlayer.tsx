@@ -436,6 +436,19 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
     }
   }, [volume]);
 
+  const [isCapsuleMinimized, setIsCapsuleMinimized] = useState(false);
+  const capsuleMinimizeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastDiscreteSpeedRef = useRef<number>(2.0);
+
+  const scheduleCapsuleMinimize = useCallback(() => {
+    if (capsuleMinimizeTimerRef.current) {
+      clearTimeout(capsuleMinimizeTimerRef.current);
+    }
+    capsuleMinimizeTimerRef.current = setTimeout(() => {
+      setIsCapsuleMinimized(true);
+    }, 550);
+  }, []);
+
   const handleLongPressStart = useCallback(() => {
     if (videoRef.current && !isFastForwarding) {
       prevSpeedRef.current = videoRef.current.playbackRate || 1;
@@ -443,55 +456,51 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
       setPlaybackRate(2.0);
       setCapsuleSpeed(2.0);
       setCapsuleProgress(66.66);
+      lastDiscreteSpeedRef.current = 2.0;
+      setIsCapsuleMinimized(false);
       setIsFastForwarding(true);
+      scheduleCapsuleMinimize();
     }
-  }, [isFastForwarding]);
+  }, [isFastForwarding, scheduleCapsuleMinimize]);
 
   const handleLongPressMove = useCallback((deltaX: number) => {
-    // Starting anchor progress is 66.66% (2.0x Fast)
-    // Left drag (negative deltaX) moves down towards 0.5x Slow (0%)
-    // Right drag (positive deltaX) moves up towards 3.0x Max (100%)
-    const newProgress = Math.max(0, Math.min(100, 66.66 + deltaX * 0.35));
+    // Anchor is index 2 (2.0x Fast) in discrete points [0.5, 1.0, 2.0, 3.0]
+    // Sliding left/right snaps strictly to one of the 4 discrete points (every ~42px)
+    const discretePoints = [0.5, 1.0, 2.0, 3.0];
+    const stepOffset = Math.round(deltaX / 42);
+    const snappedIdx = Math.max(0, Math.min(discretePoints.length - 1, 2 + stepOffset));
+    const finalSpeed = discretePoints[snappedIdx];
+    const snappedProgress = (snappedIdx / (discretePoints.length - 1)) * 100;
 
-    let calcSpeed = 1.0;
-    if (newProgress <= 33.33) {
-      // 0% to 33.33% maps smoothly from 0.5x to 1.0x
-      calcSpeed = 0.5 + (newProgress / 33.33) * 0.5;
-    } else if (newProgress <= 66.66) {
-      // 33.33% to 66.66% maps smoothly from 1.0x to 2.0x
-      calcSpeed = 1.0 + ((newProgress - 33.33) / 33.33) * 1.0;
-    } else {
-      // 66.66% to 100% maps smoothly from 2.0x to 3.0x
-      calcSpeed = 2.0 + ((newProgress - 66.66) / 33.34) * 1.0;
+    if (finalSpeed !== lastDiscreteSpeedRef.current) {
+      lastDiscreteSpeedRef.current = finalSpeed;
+      setIsCapsuleMinimized(false);
+      scheduleCapsuleMinimize();
     }
 
-    // Snap cleanly near standard milestone points (0.5x, 1.0x, 2.0x, 3.0x)
-    let finalSpeed = Math.round(calcSpeed * 10) / 10;
-    if (Math.abs(calcSpeed - 0.5) < 0.08) finalSpeed = 0.5;
-    else if (Math.abs(calcSpeed - 1.0) < 0.08) finalSpeed = 1.0;
-    else if (Math.abs(calcSpeed - 2.0) < 0.08) finalSpeed = 2.0;
-    else if (Math.abs(calcSpeed - 3.0) < 0.08) finalSpeed = 3.0;
-
-    finalSpeed = Math.max(0.5, Math.min(3.0, finalSpeed));
-
-    setCapsuleProgress(newProgress);
+    setCapsuleProgress(snappedProgress);
     setCapsuleSpeed(finalSpeed);
 
     if (videoRef.current) {
       videoRef.current.playbackRate = finalSpeed;
     }
     setPlaybackRate(finalSpeed);
-  }, []);
+  }, [scheduleCapsuleMinimize]);
 
   const handleLongPressEnd = useCallback(() => {
-    // Release resets back to normal speed (1.0x) smoothly
+    if (capsuleMinimizeTimerRef.current) {
+      clearTimeout(capsuleMinimizeTimerRef.current);
+      capsuleMinimizeTimerRef.current = null;
+    }
     if (videoRef.current) {
       videoRef.current.playbackRate = 1.0;
     }
     setPlaybackRate(1.0);
     setIsFastForwarding(false);
+    setIsCapsuleMinimized(false);
     setCapsuleSpeed(2.0);
     setCapsuleProgress(66.66);
+    lastDiscreteSpeedRef.current = 2.0;
   }, []);
 
   // Keep controls timer in sync with playback state and menus
@@ -1934,6 +1943,10 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
         onLongPressStart={handleLongPressStart}
         onLongPressMove={handleLongPressMove}
         onLongPressEnd={handleLongPressEnd}
+        onDoubleTapCenter={() => {
+          handlePlayPause();
+          handleControlInteraction();
+        }}
         onDoubleTapRewind={() => {
           const currentGlobal = timeOffset + currentTime;
           const targetGlobal = Math.max(0, currentGlobal - 10);
@@ -2160,7 +2173,8 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
         <SpeedCapsuleHUD 
           visible={isFastForwarding} 
           speed={capsuleSpeed} 
-          progress={capsuleProgress} 
+          progress={capsuleProgress}
+          minimized={isCapsuleMinimized}
         />
 
         {/* Brightness Indicator HUD */}

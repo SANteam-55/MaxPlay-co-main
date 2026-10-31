@@ -13836,12 +13836,19 @@ docs.forEach(docItem => {
 
     window.loadHotScreens = async function() {
       try {
-        // Load Rows
+        // Load Rows & Dynamic Tabs List
         const snapRows = await getDoc(doc(db, 'settings', 'screens_rows'));
         if (snapRows.exists() && snapRows.data()) {
           window.hotScreensData = snapRows.data();
+          if (Array.isArray(window.hotScreensData.__tabsList) && window.hotScreensData.__tabsList.length > 0) {
+            window.hotScreensTabs = window.hotScreensData.__tabsList.filter(t => typeof t === 'string' && t.trim().length > 0);
+          }
         } else {
           window.hotScreensData = {};
+        }
+
+        if (!window.hotScreensTabs.includes(window.activeHotScreen)) {
+          window.activeHotScreen = window.hotScreensTabs[0] || 'Trending';
         }
 
         // Apply defaults for any missing tabs
@@ -13884,15 +13891,17 @@ docs.forEach(docItem => {
               ];
             } else {
               defaults = [
-                { id: 'trending-now', title: 'Trending Now', order: 1, style: 'default', mode: 'tag', tagFilter: '', contentIds: [] },
-                { id: 'trending-featured', title: 'Featured Highlights', order: 2, style: 'seasonal_card', mode: 'tag', tagFilter: '', contentIds: [] },
-                { id: 'trending-otherworld', title: 'Welcome to Otherworld', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: '', contentIds: [] },
-                { id: 'trending-classic', title: 'Classic Hits', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: '', contentIds: [] },
+                { id: 'trending-now', title: 'Trending Now', order: 1, style: 'default', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-featured', title: 'Featured Highlights', order: 2, style: 'seasonal_card', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-otherworld', title: 'Welcome to Otherworld', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-classic', title: 'Classic Hits', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
               ];
             }
             window.hotScreensData[tab] = defaults;
           }
         });
+
+        window.hotScreensData.__tabsList = [...window.hotScreensTabs];
 
         // Load Categories
         const snapCats = await getDoc(doc(db, 'settings', 'screens_categories'));
@@ -13917,12 +13926,90 @@ docs.forEach(docItem => {
     window.renderHotScreensTabs = function() {
       const container = document.getElementById('hotscreens-tabs');
       if (!container) return;
-      container.innerHTML = window.hotScreensTabs.map(tab => `
-        <button onclick="setActiveHotScreen('${tab}')" style="white-space:nowrap; cursor:pointer; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; border:none; transition:all 0.2s; background:${window.activeHotScreen === tab ? '#8B5CF6' : 'var(--bg-tertiary)'}; color:${window.activeHotScreen === tab ? '#FFF' : 'var(--text-secondary)'}; box-shadow:${window.activeHotScreen === tab ? '0 4px 12px rgba(139,92,246,0.2)' : 'none'};">
-          ${tab}
+      const tabsHtml = window.hotScreensTabs.map(tab => {
+        const isActive = window.activeHotScreen === tab;
+        const safeTab = tab.replace(/'/g, "\\'");
+        return `
+          <div style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; padding:6px 12px 6px 16px; border-radius:20px; font-size:12px; font-weight:700; transition:all 0.2s; background:${isActive ? 'linear-gradient(135deg, #8B5CF6, #6366F1)' : 'var(--bg-tertiary)'}; color:${isActive ? '#FFF' : 'var(--text-secondary)'}; box-shadow:${isActive ? '0 4px 12px rgba(139,92,246,0.3)' : 'none'}; border:1px solid ${isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)'};">
+            <span onclick="setActiveHotScreen('${safeTab}')" style="cursor:pointer;">${tab}</span>
+            ${window.hotScreensTabs.length > 1 ? `
+              <button
+                type="button"
+                onclick="event.stopPropagation(); deleteHotScreenTab('${safeTab}')"
+                title="Delete '${tab}' Hot Tab"
+                style="background:${isActive ? 'rgba(0,0,0,0.28)' : 'rgba(239,68,68,0.15)'}; color:${isActive ? '#FFF' : '#F87171'}; border:none; width:18px; height:18px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:10px; cursor:pointer; transition:all 0.15s;"
+              >
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      const addBtnHtml = `
+        <button
+          type="button"
+          onclick="createNewHotScreenTab()"
+          style="white-space:nowrap; cursor:pointer; padding:7px 14px; border-radius:20px; font-size:12px; font-weight:800; border:1px dashed rgba(168,85,247,0.6); background:rgba(139,92,246,0.12); color:#C084FC; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s;"
+          onmouseover="this.style.background='rgba(139,92,246,0.25)'; this.style.color='#FFF';"
+          onmouseout="this.style.background='rgba(139,92,246,0.12)'; this.style.color='#C084FC';"
+        >
+          <i class="fa-solid fa-plus"></i> Create Hot Tab
         </button>
-      `).join('');
-      document.getElementById('hotscreens-active-title').innerText = `Layout for ${window.activeHotScreen}`;
+      `;
+
+      container.innerHTML = tabsHtml + addBtnHtml;
+      const titleEl = document.getElementById('hotscreens-active-title');
+      if (titleEl) titleEl.innerText = `Layout for ${window.activeHotScreen}`;
+    };
+
+    window.createNewHotScreenTab = async function() {
+      const rawName = window.prompt('Enter custom name for the new Home Screen Hot Tab (e.g. K-Drama, Marvel, Kids, Sports):');
+      if (!rawName) return;
+      const cleanName = rawName.trim();
+      if (!cleanName) return;
+      if (window.hotScreensTabs.some(t => t.toLowerCase() === cleanName.toLowerCase())) {
+        showToast(`Hot Tab "${cleanName}" already exists!`);
+        return;
+      }
+
+      window.hotScreensTabs.push(cleanName);
+      window.hotScreensData.__tabsList = [...window.hotScreensTabs];
+      if (!window.hotScreensData[cleanName]) {
+        window.hotScreensData[cleanName] = [
+          { id: `${cleanName.toLowerCase().replace(/\s+/g, '-')}-trending`, title: `Trending in ${cleanName}`, order: 1, style: 'default', mode: 'tag', tagFilter: cleanName, contentIds: [] },
+          { id: `${cleanName.toLowerCase().replace(/\s+/g, '-')}-top10`, title: `Top 10 ${cleanName}`, order: 2, style: 'top_10', mode: 'tag', tagFilter: cleanName, contentIds: [] }
+        ];
+      }
+      window.activeHotScreen = cleanName;
+      renderHotScreensTabs();
+      renderDetailedHotScreen();
+      await window.saveDetailedHotScreens();
+      showToast(`Created new Hot Tab "${cleanName}"!`);
+    };
+
+    window.deleteHotScreenTab = async function(tabName) {
+      if (window.hotScreensTabs.length <= 1) {
+        showToast('At least one Hot Tab must remain on the Home Screen.');
+        return;
+      }
+      const confirmed = await window.showCustomConfirm(
+        'Delete Hot Tab',
+        `Are you sure you want to delete the "${tabName}" Hot Tab from the Home Screen?`,
+        { okText: 'Delete Tab', cancelText: 'Cancel', icon: 'fa-solid fa-trash' }
+      );
+      if (!confirmed) return;
+
+      window.hotScreensTabs = window.hotScreensTabs.filter(t => t !== tabName);
+      delete window.hotScreensData[tabName];
+      window.hotScreensData.__tabsList = [...window.hotScreensTabs];
+      if (window.activeHotScreen === tabName) {
+        window.activeHotScreen = window.hotScreensTabs[0] || 'Trending';
+      }
+      renderHotScreensTabs();
+      renderDetailedHotScreen();
+      await window.saveDetailedHotScreens();
+      showToast(`Deleted Hot Tab "${tabName}"!`);
     };
 
     window.setActiveHotScreen = function(tab) {
@@ -15567,6 +15654,7 @@ docs.forEach(docItem => {
     // Granular Current Tab Save
     window.saveCurrentHotScreenOnly = async function() {
       try {
+        window.hotScreensData.__tabsList = [...window.hotScreensTabs];
         const cleanRowsData = JSON.parse(JSON.stringify(window.hotScreensData || {}));
         await setDoc(doc(db, 'settings', 'screens_rows'), cleanRowsData);
         
@@ -15586,6 +15674,7 @@ docs.forEach(docItem => {
     window.saveDetailedHotScreens = async function() {
       try {
         // Strip out any undefined fields before saving to Firestore
+        window.hotScreensData.__tabsList = [...window.hotScreensTabs];
         const cleanRowsData = JSON.parse(JSON.stringify(window.hotScreensData || {}));
         await setDoc(doc(db, 'settings', 'screens_rows'), cleanRowsData);
         

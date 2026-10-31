@@ -7,6 +7,7 @@ interface GestureHandlerProps {
   onToggleControls: () => void;
   onDoubleTapRewind: () => void;
   onDoubleTapForward: () => void;
+  onDoubleTapCenter?: () => void;
   onChangeBrightness?: (delta: number) => void;
   onChangeVolume?: (delta: number) => void;
   onLongPressStart?: () => void;
@@ -20,6 +21,7 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
   onToggleControls,
   onDoubleTapRewind,
   onDoubleTapForward,
+  onDoubleTapCenter,
   onChangeBrightness,
   onChangeVolume,
   onLongPressStart,
@@ -223,6 +225,8 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
           triggerRewindAnimation();
         } else if (relativeX > containerWidth * 0.6) {
           triggerForwardAnimation();
+        } else if (onDoubleTapCenter) {
+          onDoubleTapCenter();
         } else {
           onToggleControls();
         }
@@ -300,6 +304,8 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       triggerRewindAnimation();
     } else if (clickX > width * 0.6) {
       triggerForwardAnimation();
+    } else if (onDoubleTapCenter) {
+      onDoubleTapCenter();
     } else {
       onToggleControls();
     }

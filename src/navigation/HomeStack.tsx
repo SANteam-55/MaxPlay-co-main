@@ -5,6 +5,7 @@ import { ContentDetailScreen } from '../screens/content/ContentDetailScreen';
 import { CollectionDetailScreen } from '../screens/content/CollectionDetailScreen';
 import { NetworkDetailScreen } from '../screens/content/NetworkDetailScreen';
 import { ContentItem, NetworkItem } from '../types';
+import { subscribeToContent } from '../services/contentService';
 
 interface HomeStackProps {
   onSelectContent: (item: ContentItem) => void;
@@ -27,6 +28,7 @@ export const HomeStack: React.FC<HomeStackProps> = ({
   onDetailOpenChange,
 }) => {
   const [stack, setStack] = useState<ScreenState[]>([{ name: 'home' }]);
+  const handledDeepLinkRef = React.useRef<boolean>(false);
 
   const push = (screen: ScreenState) => setStack(prev => [...prev, screen]);
   const pop = () => setStack(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
@@ -63,9 +65,32 @@ export const HomeStack: React.FC<HomeStackProps> = ({
     };
     window.addEventListener('MAXPLAY_SELECT_CONTENT', handleSelectExternal);
 
+    // Handle ?watch=<contentId> deep link from shared content card
+    let unsubDeepLink: (() => void) | undefined;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const watchId = params.get('watch');
+      if (watchId && !handledDeepLinkRef.current) {
+        unsubDeepLink = subscribeToContent((items) => {
+          if (handledDeepLinkRef.current) return;
+          const found = items.find((c) => c.id === watchId);
+          if (found) {
+            handledDeepLinkRef.current = true;
+            try {
+              const cleanUrl = new URL(window.location.href);
+              cleanUrl.searchParams.delete('watch');
+              window.history.replaceState({}, '', cleanUrl.toString());
+            } catch {}
+            handleSelect(found);
+          }
+        });
+      }
+    } catch {}
+
     return () => {
       window.removeEventListener('MAXPLAY_POP_STACK_HOME', handlePopStack);
       window.removeEventListener('MAXPLAY_SELECT_CONTENT', handleSelectExternal);
+      if (unsubDeepLink) unsubDeepLink();
     };
   }, []);
 
