@@ -15,7 +15,7 @@ interface GestureHandlerProps {
   onLongPressEnd?: () => void;
 }
 
-export const GestureHandler: React.FC<GestureHandlerProps> = ({
+export const GestureHandler: React.FC<GestureHandlerProps> = React.memo(({
   children,
   isLocked,
   onToggleControls,
@@ -245,7 +245,7 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       }
     }
 
-    // First tap -> Schedule single-tap control toggle unless a second tap arrives within 240ms
+    // First tap -> Schedule single-tap control toggle unless a second tap arrives within 185ms
     lastTapTimeRef.current = now;
     lastTapPosRef.current = { x: touch.clientX, y: touch.clientY };
 
@@ -255,7 +255,7 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
     singleTapTimeoutRef.current = setTimeout(() => {
       singleTapTimeoutRef.current = null;
       onToggleControls();
-    }, 240);
+    }, 185);
     touchStartPosRef.current = null;
   };
 
@@ -314,7 +314,7 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
     singleTapTimeoutRef.current = setTimeout(() => {
       singleTapTimeoutRef.current = null;
       onToggleControls();
-    }, 230);
+    }, 185);
   };
 
   const handleMouseLeave = () => {
@@ -385,13 +385,13 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       {doubleTapSide === 'left' && (
         <div
           key={`left-${rippleKey}`}
-          className="pointer-events-none absolute left-0 top-0 bottom-0 z-40 flex w-[45%] items-center justify-center rounded-r-full bg-gradient-to-r from-black/70 via-purple-600/30 to-transparent backdrop-blur-[2px] animate-in fade-in zoom-in-95 duration-200"
+          className="pointer-events-none absolute left-0 top-0 bottom-0 z-40 flex w-[45%] items-center justify-center rounded-r-full bg-gradient-to-r from-black/75 via-purple-600/30 to-transparent animate-in fade-in zoom-in-95 duration-150"
         >
-          <div className="flex flex-col items-center justify-center text-white drop-shadow-lg scale-100 animate-pulse">
-            <div className="flex items-center justify-center h-16 w-16 rounded-full bg-purple-600/40 border border-purple-400/50 shadow-xl shadow-purple-500/40 backdrop-blur-md">
+          <div className="flex flex-col items-center justify-center text-white drop-shadow-lg scale-100">
+            <div className="flex items-center justify-center h-16 w-16 rounded-full bg-purple-600/50 border border-purple-400/50 shadow-xl">
               <RotateCcw className="h-8 w-8 text-purple-200 animate-spin -scale-x-100 [animation-duration:1s]" />
             </div>
-            <div className="flex items-center gap-1.5 mt-2.5 bg-black/70 px-3.5 py-1 rounded-full border border-white/20 backdrop-blur-md">
+            <div className="flex items-center gap-1.5 mt-2.5 bg-black/85 px-3.5 py-1 rounded-full border border-white/20">
               <Rewind className="h-3.5 w-3.5 text-purple-400 fill-purple-400" />
               <span className="text-xs font-black tracking-wider text-white">10 SECONDS</span>
             </div>
@@ -403,13 +403,13 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       {doubleTapSide === 'right' && (
         <div
           key={`right-${rippleKey}`}
-          className="pointer-events-none absolute right-0 top-0 bottom-0 z-40 flex w-[45%] items-center justify-center rounded-l-full bg-gradient-to-l from-black/70 via-purple-600/30 to-transparent backdrop-blur-[2px] animate-in fade-in zoom-in-95 duration-200"
+          className="pointer-events-none absolute right-0 top-0 bottom-0 z-40 flex w-[45%] items-center justify-center rounded-l-full bg-gradient-to-l from-black/75 via-purple-600/30 to-transparent animate-in fade-in zoom-in-95 duration-150"
         >
-          <div className="flex flex-col items-center justify-center text-white drop-shadow-lg scale-100 animate-pulse">
-            <div className="flex items-center justify-center h-16 w-16 rounded-full bg-purple-600/40 border border-purple-400/50 shadow-xl shadow-purple-500/40 backdrop-blur-md">
+          <div className="flex flex-col items-center justify-center text-white drop-shadow-lg scale-100">
+            <div className="flex items-center justify-center h-16 w-16 rounded-full bg-purple-600/50 border border-purple-400/50 shadow-xl">
               <RotateCw className="h-8 w-8 text-purple-200 animate-spin [animation-duration:1s]" />
             </div>
-            <div className="flex items-center gap-1.5 mt-2.5 bg-black/70 px-3.5 py-1 rounded-full border border-white/20 backdrop-blur-md">
+            <div className="flex items-center gap-1.5 mt-2.5 bg-black/85 px-3.5 py-1 rounded-full border border-white/20">
               <span className="text-xs font-black tracking-wider text-white">10 SECONDS</span>
               <FastForward className="h-3.5 w-3.5 text-purple-400 fill-purple-400" />
             </div>
@@ -418,6 +418,6 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       )}
     </div>
   );
-};
+});
 
 

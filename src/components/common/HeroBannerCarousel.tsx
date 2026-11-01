@@ -19,7 +19,7 @@ interface HeroBannerCarouselProps {
 
 const DEFAULT_FALLBACK_IMG = 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200';
 
-export const HeroBannerCarousel: React.FC<HeroBannerCarouselProps> = ({
+export const HeroBannerCarousel: React.FC<HeroBannerCarouselProps> = React.memo(({
   banners,
   onSelectContent,
   onPaletteChange,
@@ -332,5 +332,5 @@ export const HeroBannerCarousel: React.FC<HeroBannerCarouselProps> = ({
       </AnimatePresence>
     </div>
   );
-};
+});
 

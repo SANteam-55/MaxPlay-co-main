@@ -483,7 +483,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
     }
     capsuleMinimizeTimerRef.current = setTimeout(() => {
       setIsCapsuleMinimized(true);
-    }, 1000);
+    }, 550);
   }, []);
 
   const handleLongPressStart = useCallback(() => {
@@ -591,7 +591,13 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
       setActiveMenu(null);
       return;
     }
-    setShowControls((prev) => !prev);
+    setShowControls((prev) => {
+      const next = !prev;
+      if (next && videoRef.current) {
+        setCurrentTime(videoRef.current.currentTime);
+      }
+      return next;
+    });
   }, [activeMenu, isLocked]);
 
   // Derive available languages for current videoSources, dynamic HLS audio tracks, or passed content languages
@@ -2054,9 +2060,8 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
             const t = e.currentTarget.currentTime;
             const d = e.currentTarget.duration || duration || 0;
             const now = Date.now();
-            // 4GB RAM Optimization: Throttle React state updates to 250ms when controls are open, and 950ms when controls are hidden
-            const minInterval = showControls || normalizedSkipMarkers ? 250 : 950;
-            if (now - lastTimeStateUpdateRef.current >= minInterval) {
+            // Zero-Lag Playback Optimization: Only trigger React state updates when controls are visible or skip markers exist
+            if ((showControls || normalizedSkipMarkers) && now - lastTimeStateUpdateRef.current >= 250) {
               lastTimeStateUpdateRef.current = now;
               setCurrentTime(t);
             }
@@ -2124,11 +2129,11 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/50 pointer-events-none gap-2.5">
             <Loader2 className="w-12 h-12 text-[#8B5CF6] animate-spin" />
             {switchingQualityLabel ? (
-              <span className="text-xs sm:text-sm font-bold text-white tracking-wide bg-black/80 px-4 py-1.5 rounded-full border border-[#8B5CF6]/50 backdrop-blur-md shadow-xl animate-pulse">
+              <span className="text-xs sm:text-sm font-bold text-white tracking-wide bg-black/85 px-4 py-1.5 rounded-full border border-[#8B5CF6]/50 shadow-xl animate-pulse">
                 Your quality is switching to {switchingQualityLabel}...
               </span>
             ) : isResolvingStream ? (
-              <span className="text-xs font-medium text-white/80 tracking-wide bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md">
+              <span className="text-xs font-medium text-white/80 tracking-wide bg-black/75 px-3 py-1 rounded-full border border-white/10">
                 Securing stream link...
               </span>
             ) : null}
@@ -2137,7 +2142,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
 
         {qualitySwitchDoneBadge && !switchingQualityLabel && !isInNativePip && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-emerald-600/90 text-white text-[11px] font-bold px-3.5 py-1 rounded-full border border-emerald-300/40 shadow-lg backdrop-blur-md">
+            <div className="bg-emerald-600/95 text-white text-[11px] font-bold px-3.5 py-1 rounded-full border border-emerald-300/40 shadow-lg">
               ✓ {qualitySwitchDoneBadge}
             </div>
           </div>
@@ -2184,7 +2189,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
             onTouchStart={(e) => {
               e.stopPropagation();
             }}
-            className="absolute top-3 left-3 sm:top-4 sm:left-4 z-40 flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-black/80 hover:bg-black text-white border border-white/35 hover:border-white/70 shadow-2xl cursor-pointer pointer-events-auto transition-all hover:scale-105 active:scale-90 backdrop-blur-md"
+            className="absolute top-3 left-3 sm:top-4 sm:left-4 z-40 flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-black/85 hover:bg-black text-white border border-white/35 hover:border-white/70 shadow-2xl cursor-pointer pointer-events-auto transition-transform hover:scale-105 active:scale-90"
             title="Exit details screen"
             aria-label="Go Back"
           >
@@ -2198,7 +2203,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
             <button
               type="button"
               onClick={handleSkipIntroOutro}
-              className="bg-black/90 hover:bg-[#8B5CF6] text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm border border-white/30 hover:border-purple-300 backdrop-blur-md shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer group shadow-purple-950/40"
+              className="bg-black/90 hover:bg-[#8B5CF6] text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm border border-white/30 hover:border-purple-300 shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer group shadow-purple-950/40"
             >
               <SkipForward className="h-4 w-4 text-[#8B5CF6] group-hover:text-white transition-colors" />
               <span className="tracking-wide">{activeSkipMarker.label}</span>
@@ -2216,13 +2221,13 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
 
         {/* Brightness Indicator HUD */}
         <div 
-          className={`absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 z-40 transition-all duration-300 pointer-events-none ${
+          className={`absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 z-40 transition-all duration-200 pointer-events-none ${
             showBrightnessIndicator 
               ? 'opacity-100 scale-100 translate-x-0' 
               : 'opacity-0 scale-95 -translate-x-2'
           }`}
         >
-          <div className="bg-black/85 backdrop-blur-xl border border-white/20 rounded-2xl px-3 py-4 flex flex-col items-center gap-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] min-w-[56px]">
+          <div className="bg-black/90 border border-white/20 rounded-2xl px-3 py-4 flex flex-col items-center gap-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] min-w-[56px]">
             <div className="p-1.5 rounded-full bg-amber-500/20 text-amber-300">
               {brightness > 100 ? (
                 <Sun className="w-5 h-5 animate-pulse text-amber-300" />
@@ -2247,16 +2252,16 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
 
         {/* Volume Indicator HUD */}
         <div 
-          className={`absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 z-40 transition-all duration-300 pointer-events-none ${
+          className={`absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 z-40 transition-all duration-200 pointer-events-none ${
             showVolumeIndicator 
               ? 'opacity-100 scale-100 translate-x-0' 
               : 'opacity-0 scale-95 translate-x-2'
           }`}
         >
-          <div className={`backdrop-blur-xl border rounded-2xl px-3 py-4 flex flex-col items-center gap-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] min-w-[56px] transition-colors duration-200 ${
+          <div className={`border rounded-2xl px-3 py-4 flex flex-col items-center gap-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] min-w-[56px] transition-colors duration-200 ${
             volume > 100 
-              ? 'bg-black/90 border-orange-500/60 shadow-[0_0_25px_rgba(249,115,22,0.35)]' 
-              : 'bg-black/85 border-white/20'
+              ? 'bg-black/95 border-orange-500/60 shadow-[0_0_25px_rgba(249,115,22,0.35)]' 
+              : 'bg-black/90 border-white/20'
           }`}>
             <div className={`p-1.5 rounded-full transition-colors duration-200 ${
               volume > 100 

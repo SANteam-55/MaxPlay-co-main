@@ -19,7 +19,7 @@ interface ProgressBarProps {
   };
 }
 
-export const ProgressBar: React.FC<ProgressBarProps> = ({
+export const ProgressBar: React.FC<ProgressBarProps> = React.memo(({
   currentTime,
   duration,
   buffered = 0,
@@ -37,6 +37,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const [dragTime, setDragTime] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hasPreviewFrame, setHasPreviewFrame] = useState(false);
+  const [hasActivatedPreview, setHasActivatedPreview] = useState(false);
   const dragTimeRef = useRef<number | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -102,12 +103,19 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       }
       loadedPreviewUrlRef.current = '';
       setHasPreviewFrame(false);
+      setHasActivatedPreview(false);
     };
   }, [effectivePreviewUrl]);
 
+  useEffect(() => {
+    if (isScrubActive && !hasActivatedPreview) {
+      setHasActivatedPreview(true);
+    }
+  }, [isScrubActive, hasActivatedPreview]);
+
   // Lazily initialize and seek the dedicated muted preview <video> element to the target scrubbed timestamp
   useEffect(() => {
-    if (!isScrubActive || !effectivePreviewUrl || duration <= 0) return;
+    if (!isScrubActive || !hasActivatedPreview || !effectivePreviewUrl || duration <= 0) return;
     const pVideo = previewVideoRef.current;
     if (!pVideo) return;
 
@@ -192,7 +200,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         }
       }
     }
-  }, [isScrubActive, displayTime, effectivePreviewUrl, duration, timeOffset]);
+  }, [isScrubActive, hasActivatedPreview, displayTime, effectivePreviewUrl, duration, timeOffset]);
 
   const getTimeFromEvent = (e: React.MouseEvent | MouseEvent | TouchEvent | React.TouchEvent) => {
     if (!barRef.current || duration <= 0) return 0;
@@ -283,14 +291,14 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       data-interactive="true"
     >
       {/* Floating Video Preview Frame during Drag/Hover (keeps previewVideo mounted once initialized so seeking is instant) */}
-      {duration > 0 && (
+      {duration > 0 && hasActivatedPreview && (
         <div
           style={{
             left: `${clampedPreviewPercent}%`,
             visibility: isScrubActive ? 'visible' : 'hidden',
             opacity: isScrubActive ? 1 : 0,
           }}
-          className="absolute -top-24 sm:-top-28 -translate-x-1/2 z-40 flex flex-col items-center pointer-events-none transition-opacity duration-100"
+          className="absolute -top-24 sm:-top-28 -translate-x-1/2 z-40 flex flex-col items-center pointer-events-none transition-opacity duration-75 will-change-transform"
         >
           <div className="relative w-32 h-18 sm:w-36 sm:h-20 rounded-lg overflow-hidden bg-[#0D0D14] border-2 border-[#8B5CF6]/80 shadow-[0_8px_28px_rgba(0,0,0,0.85)] flex items-center justify-center">
             {posterUrl && !hasPreviewFrame && (
@@ -304,7 +312,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
               ref={previewVideoRef}
               muted
               playsInline
-              preload="metadata"
+              preload="none"
               referrerPolicy="no-referrer"
               onLoadedData={() => setHasPreviewFrame(true)}
               onSeeked={() => {
@@ -386,5 +394,5 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       />
     </div>
   );
-};
+});
 

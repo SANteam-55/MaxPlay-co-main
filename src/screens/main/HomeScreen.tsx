@@ -29,6 +29,81 @@ interface HomeScreenProps {
   onSeeAllCategory?: (category: string) => void;
 }
 
+const RotatingSearchPlaceholder: React.FC = React.memo(() => {
+  const [searchTags, setSearchTags] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('maxplay_search_tags_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [tagIndex, setTagIndex] = useState(0);
+
+  useEffect(() => {
+    const unsub = subscribeToSearchSettings((data) => {
+      let tags: string[] = [];
+      if (data?.everyoneSearching) {
+        if (Array.isArray(data.everyoneSearching)) {
+          tags = data.everyoneSearching.flatMap((item) =>
+            typeof item === 'string' ? item.split(',').map((s) => s.trim()).filter(Boolean) : []
+          );
+        } else if (typeof data.everyoneSearching === 'string') {
+          tags = (data.everyoneSearching as string).split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      }
+      if (tags.length === 0 && data?.popularSearches) {
+        if (Array.isArray(data.popularSearches)) {
+          tags = data.popularSearches.flatMap((item) =>
+            typeof item === 'string' ? item.split(',').map((s) => s.trim()).filter(Boolean) : []
+          );
+        } else if (typeof data.popularSearches === 'string') {
+          tags = (data.popularSearches as string).split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      }
+      if (tags.length > 0) {
+        setSearchTags(tags);
+        try {
+          localStorage.setItem('maxplay_search_tags_cache', JSON.stringify(tags));
+        } catch {}
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (searchTags.length <= 1) return;
+    const interval = setInterval(() => {
+      setTagIndex((prev) => (prev + 1) % searchTags.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [searchTags.length]);
+
+  const activePlaceholder =
+    searchTags.length > 0
+      ? searchTags[tagIndex % searchTags.length]
+      : 'Search movies, series & anime...';
+
+  return (
+    <div className="relative w-full h-full overflow-hidden pointer-events-none">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activePlaceholder}
+          initial={{ opacity: 0, y: 7 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -7 }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
+          className="absolute inset-0 flex items-center text-sm text-[#e4e4e7] truncate select-none font-normal text-left"
+        >
+          {activePlaceholder}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+});
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onSelectContent,
   onSelectNetwork,
@@ -225,79 +300,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return NEUTRAL_AMBIENT_PALETTE;
   });
 
-  // Cached admin search tags for zero-delay instant display on page load
-  const [searchTags, setSearchTags] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem('maxplay_search_tags_cache');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
-
-  const [tagIndex, setTagIndex] = useState(0);
-
-  // Subscribe to Search Settings from Firestore
-  useEffect(() => {
-    const unsub = subscribeToSearchSettings((data) => {
-      let tags: string[] = [];
-      if (data?.everyoneSearching) {
-        if (Array.isArray(data.everyoneSearching)) {
-          tags = data.everyoneSearching.flatMap(item =>
-            typeof item === 'string' ? item.split(',').map(s => s.trim()).filter(Boolean) : []
-          );
-        } else if (typeof data.everyoneSearching === 'string') {
-          tags = (data.everyoneSearching as string).split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      if (tags.length === 0 && data?.popularSearches) {
-        if (Array.isArray(data.popularSearches)) {
-          tags = data.popularSearches.flatMap(item =>
-            typeof item === 'string' ? item.split(',').map(s => s.trim()).filter(Boolean) : []
-          );
-        } else if (typeof data.popularSearches === 'string') {
-          tags = (data.popularSearches as string).split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      if (tags.length > 0) {
-        setSearchTags(tags);
-        try {
-          localStorage.setItem('maxplay_search_tags_cache', JSON.stringify(tags));
-        } catch {}
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // Smooth cyclic interval that steps through admin search tags without resetting or jumping
-  useEffect(() => {
-    if (searchTags.length <= 1) return;
-
-    const interval = setInterval(() => {
-      setTagIndex((prev) => (prev + 1) % searchTags.length);
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [searchTags.length]);
-
-  const activePlaceholder = searchTags.length > 0
-    ? searchTags[tagIndex % searchTags.length]
-    : 'Search movies, series & anime...';
-
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const savedScrollTopRef = React.useRef<number>(0);
+  const scrollSaveTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  // Handle scroll event to toggle sticky header background and record exact scroll position
+  // Handle scroll event to toggle sticky header background without blocking 60fps frames with synchronous storage I/O
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const top = e.currentTarget.scrollTop;
     savedScrollTopRef.current = top;
-    try {
-      sessionStorage.setItem('MAXPLAY_HOME_SCROLL_TOP', String(top));
-    } catch (_) {}
     const nextScrolled = top > 8;
     setIsScrolled((prev) => (prev === nextScrolled ? prev : nextScrolled));
+
+    if (scrollSaveTimerRef.current) {
+      clearTimeout(scrollSaveTimerRef.current);
+    }
+    scrollSaveTimerRef.current = setTimeout(() => {
+      try {
+        sessionStorage.setItem('MAXPLAY_HOME_SCROLL_TOP', String(savedScrollTopRef.current));
+      } catch (_) {}
+    }, 200);
   }, []);
 
   // Restore exact scroll position when returning from ContentDetailScreen via Back button
@@ -305,6 +326,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const handleSaveScroll = () => {
       if (scrollContainerRef.current) {
         savedScrollTopRef.current = scrollContainerRef.current.scrollTop;
+        try {
+          sessionStorage.setItem('MAXPLAY_HOME_SCROLL_TOP', String(savedScrollTopRef.current));
+        } catch (_) {}
       }
     };
     const handleRestoreScroll = () => {
@@ -469,21 +493,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                  <Search className="h-4 w-4 text-[#A1A1AA] group-hover:text-white transition-colors" />
                </div>
                
-               {/* Animated Rotating Search Placeholder (Smooth non-jumping cross-fade) */}
-               <div className="relative w-full h-full overflow-hidden pointer-events-none">
-                 <AnimatePresence mode="wait">
-                   <motion.div
-                     key={activePlaceholder}
-                     initial={{ opacity: 0, y: 7 }}
-                     animate={{ opacity: 1, y: 0 }}
-                     exit={{ opacity: 0, y: -7 }}
-                     transition={{ duration: 0.32, ease: 'easeOut' }}
-                     className="absolute inset-0 flex items-center text-sm text-[#e4e4e7] truncate select-none font-normal text-left"
-                   >
-                     {activePlaceholder}
-                   </motion.div>
-                 </AnimatePresence>
-               </div>
+               {/* Isolated Rotating Search Placeholder (Zero parent re-renders) */}
+               <RotatingSearchPlaceholder />
 
                <button 
                  type="button"
@@ -649,9 +660,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       })()}
 
       
-      {/* Top 10 Content Row (Filtered by Active Tab) */}
+      {/* Top 10 Content Row Fallback (Only rendered here if the active screen does NOT already have a Top 10 row in its Manage Hot Screens row list) */}
       {(() => {
         if (loading) return null;
+        const userConfigured = homeRowsByScreen?.[activeTab];
+        const currentScreenRows = (userConfigured && userConfigured.length > 0)
+          ? userConfigured
+          : getDefaultRowsForScreen(activeTab);
+        const hasConfiguredTop10Row = currentScreenRows.some((r: any) => {
+          const st = (r?.style || '').toLowerCase();
+          const tl = (r?.title || '').toLowerCase();
+          const il = (r?.id || '').toLowerCase();
+          return st === 'top_10' || st === 'top10' || tl.includes('top 10') || il.includes('top_10') || il.includes('top10');
+        });
+        if (hasConfiguredTop10Row) return null;
+
         const top10 = filteredContentList
           .filter((item: any) => item.isTop10)
           .sort((a: any, b: any) => (a.top10Rank || 99) - (b.top10Rank || 99))
@@ -680,6 +703,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         src={displayPoster}
                         alt={displayTitle}
                         loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                       <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/65 via-black/15 to-transparent pointer-events-none" />
@@ -1056,12 +1080,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           // Top 10 Ranking Row (Single horizontal scrolling line 1, 2, 3...)
           if (isTop10Row) {
-            const top10Items = rowContent.slice(0, 10);
+            let top10Items = rowContent;
+            if (row.mode !== 'custom_pick') {
+              const explicitTop10 = (filteredContentList || [])
+                .filter((item: any) => item.isTop10)
+                .sort((a: any, b: any) => (a.top10Rank || 99) - (b.top10Rank || 99));
+              if (explicitTop10.length > 0) {
+                top10Items = explicitTop10;
+              }
+            }
+            top10Items = top10Items.slice(0, 10);
             if (top10Items.length === 0) return null;
             return (
               <div key={row.id || row.title} className="mt-5 px-4">
                 <SectionHeader
-                  title={row.title}
+                  title={row.title || `Top 10 in ${activeTab}`}
                   icon={icon}
                 />
                 <div className="flex items-center gap-3.5 overflow-x-auto pb-4 pt-1 scrollbar-none">
@@ -1195,36 +1228,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   } else if (style === 'classic_anime') {
                     const displayPoster = item.customImage || item.posterUrl;
                     const displayTitle = item.customTitle || item.title;
-                    const rawLang =
-                      item.language ||
-                      (Array.isArray(item.languages) && item.languages.length > 0 ? item.languages[0] : '') ||
-                      (Array.isArray(item.availableLanguages) && item.availableLanguages.length > 0 ? item.availableLanguages[0] : '');
-                    const languageBadge = rawLang
-                      ? String(rawLang).replace(/\s*(dub|dubbed|sub|subbed)\s*/gi, '').trim()
-                      : '';
                     return (
                       <div 
                         key={`${item.id}-${index}`} 
                         onClick={() => handleContentClick(item)} 
-                        className="group relative shrink-0 w-[108px] sm:w-[118px] flex flex-col rounded-[8px] overflow-hidden bg-[#161922] border border-white/[0.06] shadow-md cursor-pointer hover:scale-[1.02] active:scale-95 transition-transform"
+                        className="group relative shrink-0 w-[96px] sm:w-[104px] flex flex-col bg-transparent border-0 cursor-pointer active:scale-95 transition-transform"
                       >
-                        <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#121318]">
+                        <div className="relative w-full aspect-[2/3] rounded-[7px] overflow-hidden bg-[#121318]">
                           <img 
                             src={displayPoster} 
                             alt={displayTitle} 
                             loading="lazy"
+                            decoding="async"
                             className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
                           />
-                          {languageBadge && (
-                            <div className="absolute top-1.5 right-1.5 z-10 px-2 py-0.5 rounded-[5px] bg-black/65 backdrop-blur-sm">
-                              <span className="text-[10px] font-medium text-white leading-none tracking-tight">
-                                {languageBadge}
-                              </span>
-                            </div>
-                          )}
                         </div>
-                        <div className="w-full bg-[#161922] px-2 py-2 flex items-center">
-                          <h3 className="truncate block text-[12px] font-normal text-[#E5E7EB] group-hover:text-white transition-colors" title={displayTitle}>
+                        <div className="w-full mt-1.5 px-0.5 pb-0 flex items-center">
+                          <h3 className="truncate block text-[11.5px] font-normal text-[#E5E7EB] group-hover:text-white transition-colors leading-tight" title={displayTitle}>
                             {displayTitle}
                           </h3>
                         </div>

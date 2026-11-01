@@ -11,7 +11,7 @@ interface QualityDrawerProps {
   onClose: () => void;
 }
 
-export const QualityDrawer: React.FC<QualityDrawerProps> = ({
+export const QualityDrawer: React.FC<QualityDrawerProps> = React.memo(({
   visible,
   currentQuality,
   availableQualities,
@@ -34,11 +34,11 @@ export const QualityDrawer: React.FC<QualityDrawerProps> = ({
   return (
     <div
       onClick={onClose}
-      className="absolute inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs transition-opacity duration-200"
+      className="absolute inset-0 z-50 flex justify-end bg-black/65 transition-opacity duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-[260px] sm:w-[280px] flex-col bg-[#121212]/95 backdrop-blur-md p-4 border-l border-[#1C1C1E] shadow-2xl animate-in slide-in-from-right duration-200 select-none"
+        className="flex h-full w-[260px] sm:w-[280px] flex-col bg-[#121216] p-4 border-l border-[#1C1C1E] shadow-2xl animate-in slide-in-from-right duration-200 select-none"
       >
         <div className="flex items-center justify-between border-b border-[#1C1C1E] pb-3 mb-3">
           <div className="flex items-center gap-2">
@@ -203,4 +203,4 @@ export const QualityDrawer: React.FC<QualityDrawerProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -8,7 +8,7 @@ interface SpeedDrawerProps {
   onClose: () => void;
 }
 
-export const SpeedDrawer: React.FC<SpeedDrawerProps> = ({
+export const SpeedDrawer: React.FC<SpeedDrawerProps> = React.memo(({
   visible,
   currentSpeed,
   onSelectSpeed,
@@ -48,11 +48,11 @@ export const SpeedDrawer: React.FC<SpeedDrawerProps> = ({
   return (
     <div
       onClick={onClose}
-      className="absolute inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+      className="absolute inset-0 z-50 flex justify-end bg-black/65 animate-in fade-in duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-[260px] max-w-[85vw] flex-col bg-[#121216] p-4 border-l border-white/10 shadow-2xl animate-in slide-in-from-right duration-250 select-none"
+        className="flex h-full w-[260px] max-w-[85vw] flex-col bg-[#121216] p-4 border-l border-white/10 shadow-2xl animate-in slide-in-from-right duration-200 select-none"
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-2">
           <div className="flex items-center gap-2">
@@ -107,5 +107,5 @@ export const SpeedDrawer: React.FC<SpeedDrawerProps> = ({
       </div>
     </div>
   );
-};
+});
 

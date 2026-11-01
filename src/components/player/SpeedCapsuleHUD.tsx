@@ -10,7 +10,7 @@ interface SpeedCapsuleHUDProps {
 
 export const DISCRETE_HOLD_SPEEDS = [0.5, 1.0, 2.0, 3.0];
 
-export const SpeedCapsuleHUD: React.FC<SpeedCapsuleHUDProps> = ({
+export const SpeedCapsuleHUD: React.FC<SpeedCapsuleHUDProps> = React.memo(({
   visible,
   speed,
   minimized = false,
@@ -22,127 +22,72 @@ export const SpeedCapsuleHUD: React.FC<SpeedCapsuleHUDProps> = ({
     Math.abs(curr - speed) < Math.abs(prev - speed) ? curr : prev
   );
 
-  // Calculate discrete progress across the 4 points (0%, 33.33%, 66.67%, 100%)
-  const pointIndex = DISCRETE_HOLD_SPEEDS.indexOf(snappedSpeed);
-  const discreteProgress =
-    pointIndex >= 0
-      ? (pointIndex / (DISCRETE_HOLD_SPEEDS.length - 1)) * 100
-      : 66.67;
-
   const isSuperFast = snappedSpeed >= 2.8;
   const isFast = snappedSpeed > 1.2 && snappedSpeed < 2.8;
   const isNormal = snappedSpeed >= 0.9 && snappedSpeed <= 1.2;
   const isSlow = snappedSpeed < 0.9;
-
-  let speedLabel = `${snappedSpeed.toFixed(1)}x Fast`;
-  if (isSuperFast) {
-    speedLabel = '3.0x Max';
-  } else if (isFast) {
-    speedLabel = '2.0x Fast';
-  } else if (isNormal) {
-    speedLabel = '1.0x Normal';
-  } else if (isSlow) {
-    speedLabel = '0.5x Slow';
-  }
 
   const compactText = Number.isInteger(snappedSpeed)
     ? `${snappedSpeed}x`
     : `${snappedSpeed.toFixed(1)}x`;
 
   return (
-    <div className="absolute top-3.5 sm:top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none">
+    <div
+      className="absolute top-3 sm:top-3.5 left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none will-change-transform"
+      style={{ transform: 'translate3d(-50%, 0, 0)' }}
+    >
       {minimized ? (
-        /* Minimized sleek pill at top so overall video view is never blocked */
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/35 border border-white/15 backdrop-blur-md shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out animate-in fade-in zoom-in-95">
+        /* Ultra-clean minimized badge at top center with no white lines or borders */
+        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/45 shadow-[0_4px_12px_rgba(0,0,0,0.45)] transition-opacity duration-150">
           {isSlow ? (
-            <Rewind className="w-3 h-3 text-cyan-300 animate-pulse" />
+            <Rewind className="w-3 h-3 text-cyan-400" />
           ) : isNormal ? (
             <Play className="w-2.5 h-2.5 text-white fill-white" />
+          ) : isSuperFast ? (
+            <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
           ) : (
-            <FastForward className="w-3 h-3 text-purple-300 animate-pulse" />
+            <FastForward className="w-3 h-3 text-[#A78BFA] fill-[#A78BFA]" />
           )}
-          <span className="font-extrabold text-[11px] tracking-wider text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)] tabular-nums">
+          <span className="font-extrabold text-[11px] tracking-wide text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] tabular-nums">
             {compactText}
           </span>
         </div>
       ) : (
-        /* Sleek Capsule Discrete Speed Pill */
-        <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 ease-out">
-          <div className="w-[216px] sm:w-[240px] bg-black/70 backdrop-blur-xl border border-white/20 rounded-full px-4 py-2 shadow-[0_10px_28px_rgba(0,0,0,0.65)] flex flex-col gap-1 transition-all duration-200 ease-out">
-            {/* Compact Header Row */}
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-1.5">
-                {isSuperFast ? (
-                  <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400 animate-pulse" />
-                ) : isFast ? (
-                  <FastForward className="w-3.5 h-3.5 fill-purple-400 text-purple-400 animate-pulse" />
-                ) : isNormal ? (
-                  <Play className="w-3 h-3 fill-white text-white" />
-                ) : (
-                  <Rewind className="w-3.5 h-3.5 fill-cyan-400 text-cyan-400 animate-pulse" />
-                )}
-                <span className="font-extrabold text-[11px] text-white tracking-wide">
-                  {speedLabel}
-                </span>
-              </div>
-              <span className="text-[9px] text-white/60 font-semibold tracking-tight">
-                Slide ◀ ▶
-              </span>
-            </div>
-
-            {/* Discrete Point Track */}
-            <div className="relative w-full h-1.5 bg-white/15 rounded-full flex items-center my-0.5">
-              {/* Active progress fill */}
+        /* Clean borderless discrete speed pill (no white adjusting lines or track bars) */
+        <div className="flex items-center gap-1 rounded-full bg-[#0E1017]/90 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.75)]">
+          {DISCRETE_HOLD_SPEEDS.map((pt) => {
+            const isSelected = Math.abs(snappedSpeed - pt) < 0.05;
+            const label = Number.isInteger(pt) ? `${pt}.0x` : `${pt}x`;
+            return (
               <div
-                className={`h-full rounded-full transition-all duration-200 ease-out ${
-                  isSuperFast
-                    ? 'bg-gradient-to-r from-purple-500 via-orange-500 to-amber-400'
-                    : isFast
-                    ? 'bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1]'
-                    : isNormal
-                    ? 'bg-white/60'
-                    : 'bg-gradient-to-r from-cyan-400 to-blue-500'
+                key={pt}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-transform duration-150 tabular-nums ${
+                  isSelected
+                    ? 'bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] text-white font-extrabold shadow-[0_2px_10px_rgba(139,92,246,0.5)] scale-105'
+                    : 'text-white/45 font-semibold'
                 }`}
-                style={{ width: `${discreteProgress}%` }}
-              />
-
-              {/* Discrete Snap Point Dots */}
-              {DISCRETE_HOLD_SPEEDS.map((pt, idx) => {
-                const pos = (idx / (DISCRETE_HOLD_SPEEDS.length - 1)) * 100;
-                const isSelected = Math.abs(snappedSpeed - pt) < 0.05;
-                return (
-                  <div
-                    key={pt}
-                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full transition-all duration-200 ease-out ${
-                      isSelected
-                        ? 'w-3 h-3 bg-white border-2 border-[#8B5CF6] shadow-[0_0_10px_#8B5CF6] scale-110'
-                        : 'w-1.5 h-1.5 bg-white/40'
-                    }`}
-                    style={{ left: `${pos}%` }}
-                  />
-                );
-              })}
-            </div>
-
-            {/* Speed Milestones: 0.5x ➔ 1.0x ➔ 2.0x ➔ 3.0x */}
-            <div className="flex justify-between items-center text-[9px] font-bold px-0.5 select-none">
-              <span className={`transition-all duration-150 ${isSlow ? 'text-cyan-300 font-black scale-105' : 'text-white/45'}`}>
-                0.5x
-              </span>
-              <span className={`transition-all duration-150 ${isNormal ? 'text-white font-black scale-105' : 'text-white/45'}`}>
-                1.0x
-              </span>
-              <span className={`transition-all duration-150 ${isFast ? 'text-purple-300 font-black scale-105' : 'text-white/45'}`}>
-                2.0x
-              </span>
-              <span className={`transition-all duration-150 ${isSuperFast ? 'text-amber-300 font-black scale-105' : 'text-white/45'}`}>
-                3.0x
-              </span>
-            </div>
-          </div>
+              >
+                {isSelected && (
+                  <>
+                    {pt < 0.9 ? (
+                      <Rewind className="w-3 h-3 text-white fill-white" />
+                    ) : pt <= 1.2 ? (
+                      <Play className="w-2.5 h-2.5 text-white fill-white" />
+                    ) : pt >= 2.8 ? (
+                      <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
+                    ) : (
+                      <FastForward className="w-3 h-3 text-white fill-white" />
+                    )}
+                  </>
+                )}
+                <span>{label}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
-};
+});
+
 

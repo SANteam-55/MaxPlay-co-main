@@ -2275,6 +2275,24 @@
                       Wide horizontal cards with frosted glass title bars below. Custom image overrides landscape background; fallback is default <strong>Landscape Backdrop (`backdropUrl`)</strong>.
                     </p>
                   </div>
+
+                  <div style="background:rgba(0,0,0,0.35); border:1px solid rgba(59,130,246,0.28); border-radius:12px; padding:14px;">
+                    <div style="display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px; color:#60A5FA; margin-bottom:6px;">
+                      <i class="fa-solid fa-circle-play"></i> Continue Watching Row (`continue_watching`)
+                    </div>
+                    <p style="font-size:12px; color:var(--text-secondary); line-height:1.5;">
+                      Vertical poster card with centered Play circle, purple progress bar, and <strong>Season X - Episode Y / Movie Title</strong> strip. Auto-populates up to 10 items from user's watch history and hides automatically when empty.
+                    </p>
+                  </div>
+
+                  <div style="background:rgba(0,0,0,0.35); border:1px solid rgba(245,158,11,0.32); border-radius:12px; padding:14px;">
+                    <div style="display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px; color:#FBBF24; margin-bottom:6px;">
+                      <i class="fa-solid fa-trophy"></i> Top 10 Ranking Row (`top_10`)
+                    </div>
+                    <p style="font-size:12px; color:var(--text-secondary); line-height:1.5;">
+                      Single-line horizontal ranking row with bold <strong>1 to 10</strong> white-outlined rank numbers overlapping the bottom-left of each vertical poster. Works with both Dynamic Top 10/Tag and Custom Pick modes.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -2285,12 +2303,20 @@
                     <i class="fa-solid fa-bars-staggered" style="color:var(--accent-amber);"></i> Content Rows & Custom Sections
                   </h3>
                   <p style="font-size:12px; color:var(--text-secondary); margin-top:2px;">
-                    Configure dynamic tagged rows or manually select custom picked items with custom background image overrides.
+                    Configure Card Style Layouts (including Continue Watching & Top 10 Ranking rows), dynamic tags, or custom picked items.
                   </p>
                 </div>
-                <button class="btn-primary" onclick="addNewHotRow()" style="background:linear-gradient(135deg, #8B5CF6, #6D28D9); border:none; color:#FFF; font-size:13px; font-weight:700; padding:10px 18px; border-radius:10px; cursor:pointer; box-shadow:0 4px 14px rgba(139, 92, 246, 0.35); transition:all 0.2s;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
-                  <i class="fa-solid fa-plus"></i> Add New Content Row
-                </button>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <button type="button" onclick="addNewHotRowWithStyle('continue_watching')" style="background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.45); color:#93C5FD; font-size:12px; font-weight:800; padding:9px 14px; border-radius:10px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s;">
+                    <i class="fa-solid fa-circle-play"></i> + Continue Watching Row
+                  </button>
+                  <button type="button" onclick="addNewHotRowWithStyle('top_10')" style="background:rgba(245,158,11,0.18); border:1px solid rgba(245,158,11,0.45); color:#FDE68A; font-size:12px; font-weight:800; padding:9px 14px; border-radius:10px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s;">
+                    <i class="fa-solid fa-trophy"></i> + Top 10 Ranking Row
+                  </button>
+                  <button class="btn-primary" onclick="addNewHotRow()" style="background:linear-gradient(135deg, #8B5CF6, #6D28D9); border:none; color:#FFF; font-size:13px; font-weight:700; padding:10px 18px; border-radius:10px; cursor:pointer; box-shadow:0 4px 14px rgba(139, 92, 246, 0.35); transition:all 0.2s;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+                    <i class="fa-solid fa-plus"></i> Add New Content Row
+                  </button>
+                </div>
               </div>
 
               <!-- EDITOR CONTAINER -->
@@ -13857,31 +13883,39 @@ docs.forEach(docItem => {
             let defaults = [];
             if (tab === 'Anime') {
               defaults = [
-                { id: 'anime-seasonal', title: 'Seasonal Anime', order: 1, style: 'seasonal_card', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
-                { id: 'anime-classic', title: 'Classic Anime Series', order: 2, style: 'classic_anime', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
-                { id: 'anime-otherworld', title: 'Welcome to Otherworld', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
-                { id: 'anime-popular', title: 'Popular Anime', order: 4, style: 'default', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-top10', title: 'Top 10 in Anime', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-seasonal', title: 'Seasonal Anime', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-classic', title: 'Classic Anime Series', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-otherworld', title: 'Welcome to Otherworld', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-popular', title: 'Popular Anime', order: 6, style: 'default', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
               ];
             } else if (tab === 'TV') {
               defaults = [
-                { id: 'tv-seasonal', title: 'Seasonal Series', order: 1, style: 'seasonal_card', mode: 'tag', tagFilter: 'TV', contentIds: [] },
-                { id: 'tv-classic', title: 'Classic Series', order: 2, style: 'classic_anime', mode: 'tag', tagFilter: 'TV', contentIds: [] },
-                { id: 'tv-world', title: 'Welcome to TV Worlds', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: 'TV', contentIds: [] },
-                { id: 'tv-popular', title: 'Popular TV Shows', order: 4, style: 'default', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-top10', title: 'Top 10 in TV', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-seasonal', title: 'Seasonal Series', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-classic', title: 'Classic Series', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-world', title: 'Welcome to TV Worlds', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-popular', title: 'Popular TV Shows', order: 6, style: 'default', mode: 'tag', tagFilter: 'TV', contentIds: [] },
               ];
             } else if (tab === 'Short TV') {
               defaults = [
-                { id: 'shorttv-seasonal', title: 'Seasonal Short Drama', order: 1, style: 'seasonal_card', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
-                { id: 'shorttv-classic', title: 'Classic Mini Series', order: 2, style: 'classic_anime', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
-                { id: 'shorttv-quick', title: 'Quick Stories', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
-                { id: 'shorttv-trending', title: 'Trending Short Dramas', order: 4, style: 'default', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-top10', title: 'Top 10 in Short TV', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-seasonal', title: 'Seasonal Short Drama', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-classic', title: 'Classic Mini Series', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-quick', title: 'Quick Stories', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-trending', title: 'Trending Short Dramas', order: 6, style: 'default', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
               ];
             } else if (tab === 'Movies') {
               defaults = [
-                { id: 'movies-premieres', title: 'Blockbuster Premieres', order: 1, style: 'seasonal_card', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
-                { id: 'movies-classic', title: 'Classic Movie Favorites', order: 2, style: 'classic_anime', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
-                { id: 'movies-cinema', title: 'Cinema Showcase', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
-                { id: 'movies-trending', title: 'Trending Movies', order: 4, style: 'default', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-top10', title: 'Top 10 in Movies', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-premieres', title: 'Blockbuster Premieres', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-classic', title: 'Classic Movie Favorites', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-cinema', title: 'Cinema Showcase', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-trending', title: 'Trending Movies', order: 6, style: 'default', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
               ];
             } else if (tab === 'LIVE') {
               defaults = [
@@ -13891,10 +13925,13 @@ docs.forEach(docItem => {
               ];
             } else {
               defaults = [
-                { id: 'trending-now', title: 'Trending Now', order: 1, style: 'default', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
-                { id: 'trending-featured', title: 'Featured Highlights', order: 2, style: 'seasonal_card', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
-                { id: 'trending-otherworld', title: 'Welcome to Otherworld', order: 3, style: 'landscape_text', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
-                { id: 'trending-classic', title: 'Classic Hits', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-top10', title: 'Top 10 in ' + tab, order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-now', title: 'Trending Now', order: 3, style: 'default', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-networks', title: 'Networks & Studios', order: 4, style: 'network_grid', icon: 'Tv', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-featured', title: 'Featured Highlights', order: 5, style: 'seasonal_card', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-otherworld', title: 'Welcome to Otherworld', order: 6, style: 'landscape_text', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-classic', title: 'Classic Hits', order: 7, style: 'classic_anime', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
               ];
             }
             window.hotScreensData[tab] = defaults;
@@ -14316,7 +14353,9 @@ docs.forEach(docItem => {
           'network_grid': 'Networks & Studios Grid',
           'seasonal_card': 'Seasonal Wide Card',
           'classic_anime': 'Classic Portrait',
-          'landscape_text': 'Landscape + Text'
+          'landscape_text': 'Landscape + Text',
+          'continue_watching': 'Continue Watching Row',
+          'top_10': 'Top 10 Ranking Row'
         };
         const styleBadges = {
           'default': '<span style="background:rgba(139,92,246,0.15); color:#A78BFA; border:1px solid rgba(139,92,246,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-rectangle-ad"></i> Default Cards</span>',
@@ -14324,7 +14363,9 @@ docs.forEach(docItem => {
           'network_grid': '<span style="background:rgba(6,182,212,0.2); color:#22D3EE; border:1px solid rgba(6,182,212,0.4); font-size:10px; font-weight:800; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-tv"></i> Networks Hub (Squircles)</span>',
           'seasonal_card': '<span style="background:rgba(6,182,212,0.15); color:#38BDF8; border:1px solid rgba(6,182,212,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-square-full"></i> Seasonal Wide</span>',
           'classic_anime': '<span style="background:rgba(244,63,94,0.15); color:#FB7185; border:1px solid rgba(244,63,94,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-image"></i> Classic Portrait</span>',
-          'landscape_text': '<span style="background:rgba(245,158,11,0.15); color:#FBBF24; border:1px solid rgba(245,158,11,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-film"></i> Landscape + Text</span>'
+          'landscape_text': '<span style="background:rgba(245,158,11,0.15); color:#FBBF24; border:1px solid rgba(245,158,11,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-film"></i> Landscape + Text</span>',
+          'continue_watching': '<span style="background:rgba(59,130,246,0.2); color:#60A5FA; border:1px solid rgba(59,130,246,0.45); font-size:10px; font-weight:800; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-circle-play"></i> Continue Watching Row</span>',
+          'top_10': '<span style="background:rgba(245,158,11,0.22); color:#FBBF24; border:1px solid rgba(245,158,11,0.5); font-size:10px; font-weight:800; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-trophy"></i> Top 10 Ranking Row</span>'
         };
 
         h += `
@@ -14338,9 +14379,11 @@ docs.forEach(docItem => {
                 </span>
                 <span style="font-weight:800; font-size:15px; color:#FFF;">${row.title || 'Untitled Row'}</span>
                 ${styleBadges[row.style] || styleBadges['default']}
-                ${isCustomPick 
-                  ? `<span style="background:rgba(16,185,129,0.15); color:#34D399; border:1px solid rgba(16,185,129,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-hand-pointer"></i> Custom Pick</span>`
-                  : `<span style="background:rgba(234,179,8,0.15); color:#FACC15; border:1px solid rgba(234,179,8,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-filter"></i> Tag: ${row.tagFilter || 'All'}</span>`
+                ${row.style === 'continue_watching'
+                  ? `<span style="background:rgba(59,130,246,0.15); color:#93C5FD; border:1px solid rgba(59,130,246,0.35); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-clock-rotate-left"></i> Auto User History (Max 10)</span>`
+                  : isCustomPick 
+                    ? `<span style="background:rgba(16,185,129,0.15); color:#34D399; border:1px solid rgba(16,185,129,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-hand-pointer"></i> Custom Pick</span>`
+                    : `<span style="background:rgba(234,179,8,0.15); color:#FACC15; border:1px solid rgba(234,179,8,0.3); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-filter"></i> Tag: ${row.tagFilter || 'All'}</span>`
                 }
               </div>
 
@@ -14390,10 +14433,12 @@ docs.forEach(docItem => {
                 <label style="display:block; font-size:10px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Card Style Layout</label>
                 <select class="input-control" onchange="updateHotRow('${row.id}', 'style', this.value)">
                   <option value="default" ${row.style === 'default' ? 'selected':''}>Default Cards (Horizontal Scroll)</option>
+                  <option value="continue_watching" ${row.style === 'continue_watching' ? 'selected':''}>Continue Watching Row (Auto Watch History)</option>
+                  <option value="top_10" ${row.style === 'top_10' ? 'selected':''}>Top 10 Ranking Row (1 to 10 Numbered)</option>
                   <option value="three_column" ${row.style === 'three_column' ? 'selected':''}>Three Column Mode (3 Cards Per Row)</option>
                   <option value="network_grid" ${row.style === 'network_grid' ? 'selected':''}>Network Grid (Logo Squircles)</option>
                   <option value="seasonal_card" ${row.style === 'seasonal_card' ? 'selected':''}>Seasonal Wide Card</option>
-                  <option value="classic_anime" ${row.style === 'classic_anime' ? 'selected':''}>Classic Portrait</option>
+                  <option value="classic_anime" ${row.style === 'classic_anime' ? 'selected':''}>Classic Portrait (Compact Borderless)</option>
                   <option value="landscape_text" ${row.style === 'landscape_text' ? 'selected':''}>Landscape + Text</option>
                 </select>
               </div>
@@ -14405,6 +14450,42 @@ docs.forEach(docItem => {
                 </select>
               </div>
             </div>
+
+            ${row.style === 'continue_watching' ? `
+              <!-- CONTINUE WATCHING ROW SPECIAL CONFIG & LIVE VISUAL PREVIEW -->
+              <div style="background:linear-gradient(135deg, rgba(59,130,246,0.14), rgba(139,92,246,0.12)); border:1px solid rgba(59,130,246,0.4); border-radius:12px; padding:14px; margin-bottom:14px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="background:linear-gradient(135deg, #3B82F6, #8B5CF6); color:#FFF; font-size:10px; font-weight:900; padding:3px 8px; border-radius:6px;">
+                      <i class="fa-solid fa-circle-play"></i> CONTINUE WATCHING ROW
+                    </span>
+                    <span style="font-size:12px; font-weight:800; color:#FFF;">Auto User Watch History (Up to 10 Cards)</span>
+                  </div>
+                  <span style="font-size:10px; color:#93C5FD; font-weight:700;">Auto-hides if user has 0 watch history</span>
+                </div>
+                <p style="font-size:11px; color:#D4D4D8; line-height:1.4; margin:0;">
+                  Displays vertical posters with a centered circular Play button, MaxPlay purple progress bar, and a dark footer strip showing <strong>"Season 1 - Episode 2"</strong> (for series) or the <strong>Movie Title</strong> (for movies). Tapping a card opens its Details Screen so the user can resume immediately.
+                </p>
+              </div>
+            ` : ''}
+
+            ${row.style === 'top_10' ? `
+              <!-- TOP 10 RANKING ROW SPECIAL CONFIG & HELPER -->
+              <div style="background:linear-gradient(135deg, rgba(245,158,11,0.15), rgba(139,92,246,0.1)); border:1px solid rgba(245,158,11,0.45); border-radius:12px; padding:14px; margin-bottom:14px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="background:linear-gradient(135deg, #F59E0B, #D97706); color:#000; font-size:10px; font-weight:900; padding:3px 8px; border-radius:6px;">
+                      <i class="fa-solid fa-trophy"></i> TOP 10 RANKING ROW
+                    </span>
+                    <span style="font-size:12px; font-weight:800; color:#FFF;">Numbered 1 to 10 Horizontal Scroller</span>
+                  </div>
+                  <span style="font-size:10px; color:#FDE68A; font-weight:700;">Supports Dynamic Tag or Custom Pick (Top 10 Order)</span>
+                </div>
+                <p style="font-size:11px; color:#D4D4D8; line-height:1.4; margin:0;">
+                  Renders up to 10 vertical poster cards in a single horizontal line with bold white-outlined rank numbers (<strong>1, 2, 3 ... 10</strong>) overlapping the bottom-left corner. Switch <strong>Content Mode</strong> to <em>Custom Pick</em> to manually pick and reorder your exact Top 10 titles, or keep <em>Dynamic</em> to auto-load Top 10 / tagged content.
+                </p>
+              </div>
+            ` : ''}
 
             ${row.style === 'network_grid' ? `
               <!-- NETWORK GRID SPECIAL CONFIG & HUB -->
@@ -14725,11 +14806,49 @@ docs.forEach(docItem => {
       window.saveDetailedHotScreens();
     };
 
+    window.addNewHotRowWithStyle = function(styleType) {
+      if(!window.hotScreensData[window.activeHotScreen]) window.hotScreensData[window.activeHotScreen] = [];
+      const screenName = window.activeHotScreen || 'Trending';
+      let title = 'New Custom Row';
+      let icon = 'Sparkles';
+      if (styleType === 'continue_watching') {
+        title = 'Continue Watching';
+        icon = 'PlayCircle';
+      } else if (styleType === 'top_10') {
+        title = 'Top 10 in ' + screenName;
+        icon = 'Trophy';
+      }
+      const newR = {
+        id: styleType + '-' + Date.now(),
+        title: title,
+        style: styleType,
+        icon: icon,
+        mode: 'tag',
+        tagFilter: screenName === 'Trending' ? '' : screenName,
+        contentIds: [],
+        order: window.hotScreensData[screenName].length + 1
+      };
+      window.hotScreensData[screenName].push(newR);
+      renderHotRows();
+      window.saveDetailedHotScreens();
+    };
+
     window.updateHotRow = function(id, field, val) {
       const rows = window.hotScreensData[window.activeHotScreen];
       const idx = rows.findIndex(r => r.id === id);
       if(idx > -1) {
         rows[idx][field] = val;
+        if (field === 'style') {
+          const curTitle = (rows[idx].title || '').trim();
+          const isGeneric = !curTitle || curTitle === 'New Custom Row' || curTitle === 'Untitled Row';
+          if (val === 'continue_watching') {
+            if (isGeneric) rows[idx].title = 'Continue Watching';
+            if (!rows[idx].icon) rows[idx].icon = 'PlayCircle';
+          } else if (val === 'top_10') {
+            if (isGeneric) rows[idx].title = 'Top 10 in ' + (window.activeHotScreen || 'Trending');
+            if (!rows[idx].icon) rows[idx].icon = 'Trophy';
+          }
+        }
         renderHotRows();
         // Delay save slightly to avoid saving on every keystroke if it's a text input
         clearTimeout(window.hotRowSaveTimeout);
