@@ -746,6 +746,7 @@ export const OfflinePlayer: React.FC<OfflinePlayerProps> = ({
             resetHideTimer();
           }}
           videoElement={videoRef.current}
+          previewStreamUrl={blobUrl || undefined}
           posterUrl={file.posterUrl}
           currentQuality={displayQuality}
           currentLanguage={displayLanguage}

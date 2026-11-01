@@ -31,6 +31,7 @@ interface PlayerControlsProps {
   videoStretchMode?: 'contain' | 'fill' | 'cover';
   onToggleStretchMode?: () => void;
   videoElement?: HTMLVideoElement | null;
+  previewStreamUrl?: string;
   posterUrl?: string;
   timeOffset?: number;
   onLockChange?: (locked: boolean) => void;
@@ -55,7 +56,7 @@ interface PlayerControlsProps {
   };
 }
 
-export const PlayerControls: React.FC<PlayerControlsProps> = ({
+export const PlayerControls: React.FC<PlayerControlsProps> = React.memo(({
   isVisible,
   isPlaying,
   currentTime,
@@ -69,6 +70,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   videoStretchMode = 'contain',
   onToggleStretchMode,
   videoElement,
+  previewStreamUrl,
   posterUrl,
   timeOffset = 0,
   onLockChange,
@@ -264,6 +266,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             onScrubStart={onScrubStart}
             onScrubEnd={onScrubEnd}
             videoElement={videoElement}
+            previewStreamUrl={previewStreamUrl}
             posterUrl={posterUrl}
             timeOffset={timeOffset}
             skipMarkers={skipMarkers}
@@ -413,4 +416,4 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
       </div>
     </div>
   );
-};
+});

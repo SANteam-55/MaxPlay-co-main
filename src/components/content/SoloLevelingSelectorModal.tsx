@@ -47,7 +47,7 @@ interface SoloLevelingSelectorModalProps {
   contentTitle?: string;
 }
 
-export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps> = ({
+export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps> = React.memo(({
   isOpen,
   onClose,
   triggerRef,
@@ -156,35 +156,35 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop below the video player */}
+          {/* Lightweight GPU-Composited Backdrop below the video player (no backdrop-blur over video to prevent mobile GPU stutter) */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.16, ease: 'linear' }}
             onClick={(e) => {
               e.stopPropagation();
               onClose();
             }}
-            className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-[95] bg-black/60 backdrop-blur-[2px]"
+            style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+            className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-[95] bg-black/65"
           />
 
-          {/* Slide-up Panel anchored directly below the video player */}
+          {/* Hardware-Accelerated Slide-up Panel anchored directly below the video player */}
           <motion.div
             ref={modalRef}
             onClick={(e) => e.stopPropagation()}
-            initial={{ y: '100%', opacity: 0.5 }}
+            initial={{ y: '100%' }}
             animate={{
               y: 0,
-              opacity: 1,
-              transition: { type: 'spring', damping: 28, stiffness: 320 }
+              transition: { type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.22 }
             }}
             exit={{
               y: '100%',
-              opacity: 0,
-              transition: { duration: 0.2 }
+              transition: { type: 'tween', ease: [0.4, 0, 1, 1], duration: 0.16 }
             }}
-            className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-[100] bg-[#101116] text-white rounded-t-2xl border-t border-white/10 shadow-[0_-12px_40px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden select-none"
+            style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
+            className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-[100] bg-[#101116] text-white rounded-t-2xl border-t border-white/10 shadow-2xl flex flex-col overflow-hidden select-none"
           >
             {/* Top Drag Handle & Header */}
             <div className="px-4 pt-3 pb-3 border-b border-white/10 bg-[#14151c] flex items-center justify-between shrink-0">
@@ -421,4 +421,4 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
       )}
     </AnimatePresence>
   );
-};
+});

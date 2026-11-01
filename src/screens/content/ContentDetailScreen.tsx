@@ -655,23 +655,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
   const userExplicitlyChoseEpisodeRef = useRef<boolean>(false);
   const maxWatchedEpisodeRef = useRef<number>(initialSavedData?.episodeIndex ?? 0);
   
-  const [episodeViewMode, setEpisodeViewMode] = useState<'list' | 'grid'>(() => {
-    try {
-      const saved = localStorage.getItem('maxplay_ep_view_mode');
-      return saved === 'grid' ? 'grid' : 'list';
-    } catch (e) {
-      return 'list';
-    }
-  });
-
-  const handleSetEpisodeViewMode = (mode: 'list' | 'grid') => {
-    setEpisodeViewMode(mode);
-    try {
-      localStorage.setItem('maxplay_ep_view_mode', mode);
-    } catch (e) {
-      console.warn('Unable to persist episode view mode:', e);
-    }
-  };
+  const [isAllEpisodesModalOpen, setIsAllEpisodesModalOpen] = useState<boolean>(false);
   const [isAutoNextEnabled, setIsAutoNextEnabled] = useState<boolean>(true);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedServer, setSelectedServer] = useState<'server1' | 'server2'>(() => {
@@ -3062,169 +3046,117 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       {/* 2. Scrollable Body Content Below Player */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 w-full overflow-y-auto overflow-x-hidden bg-[#09090b] text-white pb-36 font-sans scroll-smooth"
+        className="flex-1 w-full overflow-y-auto overflow-x-hidden bg-[#101116] text-white pb-36 font-sans scroll-smooth"
       >
-        <div className="px-3.5 sm:px-5 pt-3.5 pb-6 z-10 w-full max-w-5xl mx-auto space-y-4">
+        <div className="px-3.5 sm:px-5 pt-3.5 pb-6 z-10 w-full max-w-5xl mx-auto">
         
-        {/* HERO CARD: Glassmorphic Container with Details and Quick Resume */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#16161d]/90 to-[#0e0e13]/90 border border-white/10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
-          {/* Subtle Ambient Radial Highlight */}
-          <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
-
-          {/* Title Header & Info Trigger */}
-          <div className="flex items-center justify-between gap-3 mb-2 relative z-10 min-w-0">
-              <h1 
-                className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-snug truncate flex-1 min-w-0"
-                title={content.title}
-              >
-                  {content.title}
-              </h1>
-              <button 
-                onClick={() => {
-                  adManager.handleActionDockClick(!!user?.isPremium);
-                  setShowDetails(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 hover:bg-white/15 text-[#c084fc] font-bold text-xs transition-all cursor-pointer shrink-0 border border-purple-500/20 shadow-sm shadow-purple-950/30 active:scale-95"
-              >
-                  <span className="text-[11px]">Info</span>
-                  <Info className="w-3.5 h-3.5 text-[#c084fc]" />
-              </button>
-          </div>
-          
-          {/* Dynamic Single-Line Metadata Ribbon */}
-          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-medium relative z-10 overflow-x-auto whitespace-nowrap scrollbar-none py-0.5 select-none">
-            {/* Content Type Badge */}
-            <span className={`shrink-0 px-2.5 py-0.5 rounded-md font-extrabold uppercase text-[9px] sm:text-[10px] tracking-wider border shadow-sm ${
-              isMovie 
-                ? 'bg-[#f43f5e]/15 text-[#f43f5e] border-[#f43f5e]/30' 
-                : (content.type === 'anime' ? 'bg-[#06b6d4]/15 text-[#06b6d4] border-[#06b6d4]/30' : 'bg-[#a855f7]/15 text-[#a855f7] border-[#a855f7]/30')
-            }`}>
-              {contentTypeLabel}
-            </span>
-
-            {/* Star Rating Badge */}
-            {content.rating ? (
-              <span className="shrink-0 flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30 font-extrabold text-[10px] sm:text-[11px]">
-                <Star className="w-3 h-3 fill-[#f59e0b]" />
-                <span>{ratingValue}</span>
-              </span>
-            ) : null}
-
-            {/* Dynamic Quality Badge */}
-            {displayQualityTag && (
-              <span className="shrink-0 px-2.5 py-0.5 rounded-md bg-white/10 text-white/90 border border-white/15 font-bold text-[9px] sm:text-[10px]">
-                {displayQualityTag}
-              </span>
-            )}
-
-            {/* Year & Country & Inline Genres */}
-            {releaseYear && <span className="shrink-0 text-white/60 font-semibold">{releaseYear}</span>}
-            {countryName && (
-              <>
-                <span className="shrink-0 text-white/20">•</span>
-                <span className="shrink-0 text-white/60 font-semibold">{countryName}</span>
-              </>
-            )}
-            {genreList.length > 0 ? (
-              <>
-                <span className="shrink-0 text-white/20">•</span>
-                <span className="shrink-0 text-white/60 font-semibold">
-                  {genreList.slice(0, 3).join(' • ')}
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="shrink-0 text-white/20">•</span>
-                <span className="shrink-0 text-[#c084fc] font-bold">
-                  {isMovie ? 'Feature Film' : `${seasonsCount} Season${seasonsCount > 1 ? 's' : ''}`}
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* DYNAMIC STREAM-RESUME CAPSULE (Directly below metadata ribbon) */}
-          {globalPlaybackPosition > 5 && (
-            <div 
-              onClick={() => {
-                scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="mt-3 p-3.5 rounded-xl bg-gradient-to-r from-purple-950/70 via-[#1a1329] to-[#121219] border border-purple-500/30 hover:border-purple-400/60 transition-all duration-200 cursor-pointer group shadow-lg shadow-purple-950/40 relative z-10"
-            >
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <div className="flex items-center gap-3 truncate">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 border border-purple-400/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-all shadow-[0_0_12px_rgba(168,85,247,0.4)]">
-                    <Play className="w-4 h-4 fill-white text-white ml-0.5" />
-                  </div>
-                  <div className="truncate">
-                    <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-purple-200 transition-colors truncate flex items-center gap-1.5">
-                      <span>Resume from {formatTime(globalPlaybackPosition)}</span>
-                      {globalTotalDuration > globalPlaybackPosition && (
-                        <span className="text-[10px] text-purple-300/80 font-normal hidden sm:inline">
-                          ({formatTime(globalTotalDuration - globalPlaybackPosition)} left)
-                        </span>
-                      )}
-                    </h4>
-                    <p className="text-[10px] text-white/50 truncate">
-                      {isMovie ? 'Feature Film' : `Episode ${selectedEpisodeIndex + 1}`} • Tap to continue watching
-                    </p>
-                  </div>
-                </div>
-                {resumePercent > 0 && (
-                  <span className="text-[10px] sm:text-xs font-black text-purple-300 bg-purple-500/20 px-2.5 py-1 rounded-full border border-purple-500/40 shrink-0 shadow-sm">
-                    {resumePercent}% Watched
-                  </span>
-                )}
-              </div>
-
-              {/* Glowing Progress Track */}
-              <div className="w-full bg-black/60 h-2 rounded-full overflow-hidden p-0.5 border border-white/5">
-                <div 
-                  className="h-full bg-gradient-to-r from-purple-500 via-indigo-400 to-cyan-400 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.9)] transition-all duration-300"
-                  style={{ width: `${Math.min(100, Math.max(0, resumePercent))}%` }}
-                />
-              </div>
-            </div>
-          )}
+        {/* TITLE & INFO ROW (Directly on dark background, matching reference screenshot) */}
+        <div className="flex items-center gap-3 min-w-0 mb-1.5">
+          <h1 
+            className="text-[20px] sm:text-[22px] font-bold text-white tracking-tight leading-snug truncate max-w-[78%]"
+            title={content.title}
+          >
+            {content.title}
+          </h1>
+          <button 
+            type="button"
+            onClick={() => {
+              adManager.handleActionDockClick(!!user?.isPremium);
+              setShowDetails(true);
+            }}
+            className="flex items-center gap-0.5 text-[14px] sm:text-[15px] font-normal text-[#8e929b] hover:text-white transition-colors cursor-pointer shrink-0 active:scale-95"
+          >
+            <span>Info</span>
+            <ChevronDown className="w-4 h-4 -rotate-90 text-[#8e929b]" />
+          </button>
         </div>
 
-        {/* 4 SLEEK RECTANGULAR ACTION BUTTONS */}
-        <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
-          {/* 1. Add to list (Emerald Green Accent) */}
+        {/* SINGLE-LINE METADATA ROW: [TV/Movie Icon] | ★ 9.5 | 480P | 2025 | Japan | Action • Anime */}
+        <div className="flex items-center gap-2 text-[12px] sm:text-[13px] text-[#7c808b] whitespace-nowrap overflow-hidden select-none mb-3.5">
+          {/* Strictly colored TV icon for Series/Anime or Movie Roll icon for Movie */}
+          {isMovie ? (
+            <Film className="w-3.5 h-3.5 text-[#6c7078] shrink-0" />
+          ) : (
+            <Tv className="w-3.5 h-3.5 text-[#6c7078] shrink-0" />
+          )}
+
+          <span className="text-[#3a3d46] shrink-0">|</span>
+
+          {/* Star Rating */}
+          <span className="flex items-center gap-1 text-[#f59e0b] font-medium shrink-0">
+            <Star className="w-3.5 h-3.5 fill-[#f59e0b] text-[#f59e0b]" />
+            <span>{ratingValue}</span>
+          </span>
+
+          <span className="text-[#3a3d46] shrink-0">|</span>
+
+          {/* Selected Quality */}
+          <span className="text-[#7c808b] shrink-0 uppercase">
+            {activeQuality && activeQuality !== 'auto'
+              ? activeQuality.replace(/\s*\[(S1|S2)\]/i, '').toUpperCase()
+              : (discoveredQualities[0] || displayQualityTag || '480P').replace(/\s*\[(S1|S2)\]/i, '').toUpperCase()}
+          </span>
+
+          <span className="text-[#3a3d46] shrink-0">|</span>
+
+          {/* Release Year */}
+          <span className="text-[#7c808b] shrink-0">{releaseYear}</span>
+
+          <span className="text-[#3a3d46] shrink-0">|</span>
+
+          {/* Country */}
+          <span className="text-[#7c808b] shrink-0">{countryName}</span>
+
+          <span className="text-[#3a3d46] shrink-0">|</span>
+
+          {/* Genres (strictly constrained to fit single line) */}
+          <span className="text-[#7c808b] truncate">
+            {genreList.slice(0, 2).join(' • ')}
+          </span>
+        </div>
+
+        {/* 4 HORIZONTAL PILL ACTION BUTTONS (+ My List, Share, Download, Server 1) */}
+        <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar scrollbar-none py-0.5 mb-4">
+          {/* 1. + My List */}
           <button 
             id="action-btn-my-list"
+            type="button"
             onClick={() => {
               adManager.handleActionDockClick(!!user?.isPremium);
               handleMyListToggle();
             }}
-            className={`flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] border transition-all duration-200 cursor-pointer active:scale-95 ${
+            className={`shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full text-[13px] font-medium transition-colors cursor-pointer active:scale-95 ${
               isMyList 
-                ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-500/30' 
-                : 'bg-[#131318]/95 border-white/10 hover:border-emerald-500/40 hover:bg-[#181822] text-white/85 hover:text-emerald-300'
+                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300' 
+                : 'bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb]'
             }`}
           >
             {isMyList ? (
-              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+              <Check className="w-4 h-4 text-emerald-400 stroke-[2.5] shrink-0" />
             ) : (
-              <Plus className="w-3.5 h-3.5 text-emerald-400 stroke-[2.4]" />
+              <Plus className="w-4 h-4 text-[#b0b3b8] stroke-[2] shrink-0" />
             )}
-            <span className="font-bold text-[9px] sm:text-[10px] tracking-tight truncate max-w-[90%]">
-              {isMyList ? 'In My List' : 'My List'}
-            </span>
+            <span>{isMyList ? 'In My List' : 'My List'}</span>
           </button>
 
-          {/* 2. Share Button */}
+          {/* 2. Share */}
           <button 
+            type="button"
             onClick={() => {
               adManager.handleActionDockClick(!!user?.isPremium);
               handleShare();
             }}
-            className="flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] bg-[#131318]/95 border border-white/10 hover:border-cyan-500/40 hover:bg-[#181822] active:scale-95 transition-all duration-200 cursor-pointer text-white/85 hover:text-cyan-300"
+            className="shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] text-[13px] font-medium transition-colors cursor-pointer active:scale-95"
           >
-            <Share2 className="w-3.5 h-3.5 stroke-[2.4] text-[#06b6d4]" />
-            <span className="font-bold text-[9px] sm:text-[10px] tracking-tight">Share</span>
+            <svg className="w-4 h-4 text-[#b0b3b8] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6" />
+              <path d="m21 3-9 9" />
+              <path d="M15 3h6v6" />
+            </svg>
+            <span>Share</span>
           </button>
 
-          {/* 3. Download Button */}
+          {/* 3. Download */}
           {(() => {
             const isContentHlsSupported = Boolean(
               content.isSmartHls ||
@@ -3240,6 +3172,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
             return (
               <button 
+                type="button"
                 onClick={() => {
                   if (!isContentHlsSupported) {
                     setToastMessage("Download is only available for HLS Mode content. Normal links do not support offline downloading.");
@@ -3248,59 +3181,36 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                   }
                   setShowDownloadModal(true);
                 }}
-                className={`flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] bg-[#131318]/95 border ${
-                  isContentHlsSupported
-                    ? 'border-white/10 hover:border-purple-500/40 hover:bg-[#181822] text-white/85 hover:text-purple-300'
-                    : 'border-white/5 bg-[#131318]/50 text-white/40 hover:border-white/10'
-                } active:scale-95 transition-all duration-200 cursor-pointer`}
-                title={isContentHlsSupported ? "Download for offline viewing (HLS Mode)" : "Download available only for HLS Mode"}
+                className={`shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full bg-[#1e2029] hover:bg-[#262936] text-[13px] font-medium transition-colors cursor-pointer active:scale-95 ${
+                  isContentHlsSupported ? 'text-[#e4e6eb]' : 'text-white/50'
+                }`}
+                title={isContentHlsSupported ? "Download for offline viewing" : "Download available only for HLS Mode"}
               >
-                <div className="relative">
-                  <Download className={`w-3.5 h-3.5 stroke-[2.4] ${isContentHlsSupported ? 'text-[#a855f7]' : 'text-zinc-500'}`} />
-                  {!isContentHlsSupported && (
-                    <span className="absolute -top-1 -right-2 text-[7px] bg-zinc-800 text-zinc-400 px-0.5 rounded border border-zinc-700">
-                      Old
-                    </span>
-                  )}
-                </div>
-                <span className="font-bold text-[9px] sm:text-[10px] tracking-tight">Download</span>
+                <Download className="w-4 h-4 text-[#b0b3b8] stroke-[2] shrink-0" />
+                <span>Download</span>
               </button>
             );
           })()}
 
-          {/* 4. Server Selection Button (Server 1 / Server 2) */}
+          {/* 4. Server 1 / Server 2 */}
           <button 
+            type="button"
             onClick={() => {
               adManager.handleActionDockClick(!!user?.isPremium);
               setIsServerModalOpen(true);
             }}
-            className={`flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] bg-[#131318]/95 border transition-all duration-200 cursor-pointer active:scale-95 ${
-              selectedServer === 'server2'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15'
-                : 'border-white/10 hover:border-purple-500/40 hover:bg-[#181822] text-white/85 hover:text-purple-300'
-            }`}
+            className="shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] text-[13px] font-medium transition-colors cursor-pointer active:scale-95"
             title="Switch Streaming Server (Server 1 / Server 2)"
           >
-            <div className="relative flex items-center justify-center">
-              <Server className={`w-3.5 h-3.5 stroke-[2.4] ${selectedServer === 'server2' ? 'text-amber-400' : 'text-[#a855f7]'}`} />
-              <span className={`ml-1 px-1 py-0.2 rounded text-[8px] font-black uppercase tracking-tighter ${
-                selectedServer === 'server2'
-                  ? 'bg-amber-500/25 text-amber-300 border border-amber-400/40'
-                  : 'bg-purple-500/25 text-purple-300 border border-purple-400/40'
-              }`}>
-                {selectedServer === 'server2' ? 'S2' : 'S1'}
-              </span>
-            </div>
-            <span className="font-bold text-[9px] sm:text-[10px] tracking-tight truncate max-w-[92%]">
-              {selectedServer === 'server2' ? 'Server 2' : 'Server 1'}
-            </span>
+            <Server className="w-4 h-4 text-[#b0b3b8] stroke-[2] shrink-0" />
+            <span>{selectedServer === 'server2' ? 'Server 2' : 'Server 1'}</span>
           </button>
         </div>
 
         {/* Floating Toast Feedback Bar */}
         {toastMessage && (
-          <div className="flex justify-center -mt-1 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
-            <span className="px-3.5 py-1 rounded-full bg-[#8B5CF6] text-white text-[11px] font-bold shadow-lg shadow-purple-950/60 border border-purple-400/40">
+          <div className="flex justify-center -mt-1 mb-2.5 animate-in fade-in duration-150">
+            <span className="px-3.5 py-1 rounded-full bg-[#8B5CF6] text-white text-[11px] font-bold shadow-lg border border-purple-400/40">
               {toastMessage}
             </span>
           </div>
@@ -3309,20 +3219,24 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         {/* NATIVE BANNER AD */}
         <NativeBanner />
 
-        {/* PLAYBACK & RESOURCES SECTION (Unboxed, Directly on Background) */}
+        {/* PLAYBACK & RESOURCES SECTION */}
         <div className="relative z-30 pt-1">
-            {/* Header Row */}
-            <div className="flex items-center justify-between mb-3">
-                <span className="font-bold text-base sm:text-lg text-white tracking-tight">Playback & Resources</span>
-                <div className="text-[11px] sm:text-xs text-zinc-400 flex items-center gap-1">
-                    <span>Uploaded by</span>
-                    <span className="font-medium text-zinc-300 truncate max-w-[135px]">{content.uploader?.name || 'MaxPlay Admin'}</span>
-                </div>
+            {/* Header Row: Playback & Resources + Uploaded by MaxPlay Admin ? */}
+            <div className="flex items-center gap-2.5 mb-3 min-w-0">
+              <span className="font-bold text-[16px] sm:text-[17px] text-white tracking-tight shrink-0">
+                Playback & Resources
+              </span>
+              <div className="text-[12px] sm:text-[13px] text-[#7c808b] flex items-center gap-1.5 min-w-0 truncate">
+                <span className="truncate">
+                  Uploaded by {content.uploader?.name || 'MaxPlay Admin'}
+                </span>
+                <HelpCircle className="w-4 h-4 text-[#7c808b] shrink-0" />
+              </div>
             </div>
 
-            {/* Single-Line Selector Row: 1. Language -> 2. Season (Series only) -> 3. Quality */}
+            {/* External Selector Boxes Row: Language -> Season (Series only) -> Quality */}
             <div className="relative z-40 flex flex-col gap-3 mb-3.5">
-                <div className="relative flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none py-0.5 w-full">
+                <div className="relative flex items-center gap-2.5 overflow-x-auto no-scrollbar scrollbar-none py-0.5 w-full">
                     {/* 1. Language Selector Box */}
                     <button
                       ref={languageTriggerRef}
@@ -3340,16 +3254,16 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                           return next;
                         });
                       }}
-                      className="shrink-0 inline-flex items-center justify-between gap-2 bg-[#16171d] hover:bg-[#1e2028] active:scale-95 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-medium text-white/90 transition-all cursor-pointer"
+                      className="shrink-0 inline-flex items-center justify-between gap-2.5 bg-[#14161d] hover:bg-[#1c1f28] active:scale-95 border border-white/15 rounded-[6px] h-[38px] px-3.5 text-[13px] font-normal text-[#e4e6eb] transition-colors cursor-pointer"
                       title="Change Audio Language"
                     >
-                      <span className="truncate max-w-[110px]">
-                        {activeLanguage || availableLanguages[0] || 'Hindi Dub'}
+                      <span className="truncate max-w-[115px]">
+                        {activeLanguage || availableLanguages[0] || 'Hindi'}
                       </span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isLanguageModalOpen ? 'rotate-180 text-white' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 text-[#8e929b] transition-transform duration-150 shrink-0 ${isLanguageModalOpen ? 'rotate-180 text-white' : ''}`} />
                     </button>
 
-                    {/* 2. Season Selector Box (Series/Anime only - placed right after Language) */}
+                    {/* 2. Season Selector Box (Series/Anime only) */}
                     {!isMovie && (
                       <button
                         ref={seasonTriggerRef}
@@ -3367,15 +3281,15 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                             return next;
                           });
                         }}
-                        className="shrink-0 inline-flex items-center justify-between gap-2 bg-[#16171d] hover:bg-[#1e2028] active:scale-95 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-medium text-white/90 transition-all cursor-pointer"
+                        className="shrink-0 inline-flex items-center justify-between gap-2.5 bg-[#14161d] hover:bg-[#1c1f28] active:scale-95 border border-white/15 rounded-[6px] h-[38px] px-3.5 text-[13px] font-normal text-[#e4e6eb] transition-colors cursor-pointer"
                         title="Change Season"
                       >
-                        <span className="truncate max-w-[120px]">
+                        <span className="truncate max-w-[125px]">
                           {content.seasonsData?.[selectedSeasonIndex]?.seasonTitle ||
                             content.seasonsData?.[selectedSeasonIndex]?.title ||
-                            `Season ${(selectedSeasonIndex + 1).toString().padStart(2, '0')}`}
+                            `Season ${selectedSeasonIndex + 1}`}
                         </span>
-                        <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isSeasonModalOpen ? 'rotate-180 text-white' : ''}`} />
+                        <ChevronDown className={`w-4 h-4 text-[#8e929b] transition-transform duration-150 shrink-0 ${isSeasonModalOpen ? 'rotate-180 text-white' : ''}`} />
                       </button>
                     )}
 
@@ -3396,13 +3310,15 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                           return next;
                         });
                       }}
-                      className="shrink-0 inline-flex items-center justify-between gap-2 bg-[#16171d] hover:bg-[#1e2028] active:scale-95 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-medium text-white/90 uppercase transition-all cursor-pointer"
+                      className="shrink-0 inline-flex items-center justify-between gap-2.5 bg-[#14161d] hover:bg-[#1c1f28] active:scale-95 border border-white/15 rounded-[6px] h-[38px] px-3.5 text-[13px] font-normal text-[#e4e6eb] uppercase transition-colors cursor-pointer"
                       title="Change Video Quality"
                     >
-                      <span className="truncate max-w-[85px]">
-                        {activeQuality === 'auto' ? 'Auto' : activeQuality}
+                      <span className="truncate max-w-[90px]">
+                        {activeQuality === 'auto'
+                          ? (discoveredQualities[0] ? discoveredQualities[0].toUpperCase() : '480P')
+                          : activeQuality.replace(/\s*\[(S1|S2)\]/i, '').toUpperCase()}
                       </span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isQualityModalOpen ? 'rotate-180 text-white' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 text-[#8e929b] transition-transform duration-150 shrink-0 ${isQualityModalOpen ? 'rotate-180 text-white' : ''}`} />
                     </button>
                 </div>
 
@@ -3509,51 +3425,43 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             </div>
 
             {/* ========================================================================= */}
-            {/* MOVIE MODE: Minimalist Play Banner (Invisible Multi-part Backend) */}
+            {/* MOVIE MODE: Full-Width Purple Gradient Title Bar (matching moviemodedetailsscreen) */}
             {/* ========================================================================= */}
             {isMovie ? (
-              <div className="space-y-3">
-                <div 
+              <div className="pt-0.5 pb-1">
+                <button
+                  type="button"
                   onClick={() => {
                     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  className="w-full py-3 px-4 rounded-xl bg-[#0d2e2b] border border-[#14b8a6]/35 flex items-center justify-between cursor-pointer hover:border-[#2dd4bf]/70 active:scale-[0.99] transition-all"
+                  className="w-full h-[50px] px-5 rounded-[10px] bg-gradient-to-r from-[#7c3aed] via-[#8b5cf6] to-[#6d28d9] shadow-[0_0_20px_rgba(124,58,237,0.35)] flex items-center justify-center cursor-pointer active:scale-[0.99] transition-transform"
+                  title={content.title}
                 >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <div className="w-6 h-6 rounded-full bg-[#14b8a6]/25 flex items-center justify-center shrink-0">
-                      <Play className="w-3 h-3 fill-[#2dd4bf] text-[#2dd4bf] ml-0.5" />
-                    </div>
-                    <span className="text-[#2dd4bf] text-xs sm:text-sm font-bold tracking-wide truncate">
-                      {content.title} {displayLangTag ? `[${displayLangTag}]` : ''}
-                    </span>
-                  </div>
-                  <div className="flex items-end gap-0.5 shrink-0 ml-2">
-                    <div className="w-0.5 h-2 bg-[#2dd4bf] rounded-full animate-pulse" />
-                    <div className="w-0.5 h-3 bg-[#2dd4bf] rounded-full" />
-                    <div className="w-0.5 h-1.5 bg-[#2dd4bf] rounded-full animate-pulse" />
-                  </div>
-                </div>
+                  <span className="text-white text-[16px] sm:text-[17px] font-bold tracking-tight truncate max-w-full">
+                    {content.title}
+                  </span>
+                </button>
               </div>
             ) : (
               /* ========================================================================= */
-              /* SERIES / ANIME MODE: Horizontal Episode Strip (All | 01 | 02...) + Optional Expanded List */
+              /* SERIES / ANIME MODE: Pinned "All" Box + Horizontally Scrollable Episode Boxes */
               /* ========================================================================= */
-              <div className="space-y-3">
-                {/* Horizontal Numbered Episode Row matching reference image (All, 01, 02, 03...) */}
-                <div className="flex items-center gap-2 overflow-x-auto py-0.5 no-scrollbar scrollbar-none" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                  <button
-                    type="button"
-                    onClick={() => handleSetEpisodeViewMode(episodeViewMode === 'list' ? 'grid' : 'list')}
-                    className={`shrink-0 px-3.5 h-10 sm:h-11 flex items-center justify-center rounded-lg text-xs font-semibold transition cursor-pointer border ${
-                      episodeViewMode === 'list'
-                        ? 'bg-[#1e2029] border-white/30 text-white'
-                        : 'bg-[#16171d] border-white/15 text-white/85 hover:text-white'
-                    }`}
-                    title="Toggle Full Episode List"
-                  >
-                    All
-                  </button>
+              <div className="flex items-center gap-2.5 w-full py-0.5">
+                {/* Fixed "All" Button on the far left — never scrolls away when episodes are scrolled */}
+                <button
+                  type="button"
+                  onClick={() => setIsAllEpisodesModalOpen(true)}
+                  className="shrink-0 w-[52px] h-[48px] flex items-center justify-center rounded-[6px] bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] text-[13px] font-medium transition-colors cursor-pointer active:scale-95"
+                  title="All Episodes Grid"
+                >
+                  All
+                </button>
 
+                {/* Horizontally Scrollable Episode Boxes (01, 02, 03...) */}
+                <div
+                  className="flex-1 flex items-center gap-2.5 overflow-x-auto py-1 pr-1 no-scrollbar scrollbar-none"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
                   {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
                     const isCurrent = selectedEpisodeIndex === idx;
                     return (
@@ -3564,167 +3472,62 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                           adManager.handleEpisodeClick(!!user?.isPremium);
                           handleSelectEpisode(idx);
                         }}
-                        className={`relative shrink-0 w-10 h-10 sm:w-11 sm:h-11 flex flex-col items-center justify-center rounded-lg text-xs font-bold transition cursor-pointer border ${
+                        className={`shrink-0 w-[52px] h-[48px] flex items-center justify-center rounded-[6px] text-[14px] transition-colors cursor-pointer active:scale-95 ${
                           isCurrent
-                            ? 'bg-[#0d332f] border-[#14b8a6]/50 text-[#2dd4bf]'
-                            : 'bg-[#16171d] text-white/80 border-white/10 hover:bg-[#1e2029] hover:text-white'
+                            ? 'bg-gradient-to-b from-[#8b5cf6] to-[#6d28d9] border border-[#c4b5fd] shadow-[0_0_12px_rgba(139,92,246,0.45)] text-white font-semibold'
+                            : 'bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] font-medium'
                         }`}
                       >
-                        <span>{(idx + 1).toString().padStart(2, '0')}</span>
-                        {isCurrent && (
-                          <div className="flex items-end gap-0.5 mt-0.5">
-                            <div className="w-0.5 h-1.5 bg-[#2dd4bf] rounded-full animate-pulse" />
-                            <div className="w-0.5 h-2.5 bg-[#2dd4bf] rounded-full" />
-                            <div className="w-0.5 h-1 bg-[#2dd4bf] rounded-full animate-pulse" />
-                          </div>
-                        )}
+                        {(idx + 1).toString().padStart(2, '0')}
                       </button>
                     );
                   })}
                 </div>
-
-                {/* Expanded Detailed Episode List when "All" (list mode) is active */}
-                {episodeViewMode === 'list' && (
-                  <div className="space-y-2.5 pt-2 animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-white/70">
-                        All Episodes ({totalEpisodes > 0 ? totalEpisodes : 1})
-                      </h3>
-                      <button
-                        onClick={() => setIsAutoNextEnabled(!isAutoNextEnabled)}
-                        className="flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 cursor-pointer transition"
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isAutoNextEnabled ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-white/30'}`} />
-                        <span>Auto Next</span>
-                      </button>
-                    </div>
-                    {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
-                      const isCurrent = selectedEpisodeIndex === idx;
-                      let epPercent = 0;
-                      let epDuration = 0;
-                      if (isCurrent) {
-                        epPercent = resumePercent;
-                        epDuration = globalTotalDuration;
-                      } else {
-                        const epPart0 = partProgressMap[`s${selectedSeasonIndex}_e${idx}_p0`];
-                        const epPart1 = partProgressMap[`s${selectedSeasonIndex}_e${idx}_p1`];
-                        const p0Dur = epPart0?.duration || (ep.duration ? ep.duration / 2 : 720);
-                        const p1Dur = epPart1?.duration || 0;
-                        epDuration = (p0Dur + p1Dur) || (ep.duration || content.duration || 1440);
-                        const p0Time = epPart0?.time || 0;
-                        const p1Time = epPart1?.time || 0;
-                        const epWatched = p1Time > 0 ? (p0Dur + p1Time) : p0Time;
-                        epPercent = (epWatched > 3 && epDuration > 0)
-                          ? Math.min(100, Math.max(2, Math.round((epWatched / epDuration) * 100)))
-                          : 0;
-                      }
-
-                      const epTitle = ep.title || `Episode ${idx + 1}`;
-                      const epThumbnail = ep.thumbnailUrl || posterOrBackdrop;
-
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => { adManager.handleEpisodeClick(!!user?.isPremium); handleSelectEpisode(idx); }}
-                          className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 ${
-                            isCurrent 
-                              ? 'bg-gradient-to-r from-purple-950/60 to-[#161622] border-purple-400/60 shadow-lg shadow-purple-950/40' 
-                              : 'bg-[#15151c] border-white/10 hover:border-white/20 hover:bg-[#1a1a24]'
-                          }`}
-                        >
-                          <div className="relative w-28 sm:w-36 aspect-video rounded-lg overflow-hidden shrink-0 bg-black/50 border border-white/10 group">
-                            <img 
-                              src={epThumbnail} 
-                              alt={epTitle}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center ${isCurrent ? 'bg-purple-500 shadow-[0_0_8px_#a855f7]' : 'bg-black/60 group-hover:bg-white/20'}`}>
-                                <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5" />
-                              </div>
-                            </div>
-                            <div className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-white/90 text-[9px] font-bold">
-                              {formatTime(epDuration)}
-                            </div>
-                            {epPercent > 0 && (
-                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
-                                <div 
-                                  className={`h-full ${isCurrent ? 'bg-emerald-400' : 'bg-purple-400'}`} 
-                                  style={{ width: `${epPercent}%` }} 
-                                />
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex-1 min-w-0 pr-1">
-                            <h4 className={`text-xs sm:text-sm font-bold truncate mb-1 ${isCurrent ? 'text-purple-300 font-extrabold' : 'text-white'}`}>
-                              {(idx + 1).toString().padStart(2, '0')}. {epTitle}
-                            </h4>
-                            <div className="flex items-center gap-2 text-[11px] mb-1">
-                              {epPercent > 0 ? (
-                                <span className="text-emerald-400 font-extrabold text-[10px] flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                  {epPercent}% Watched
-                                </span>
-                              ) : (
-                                <span className="text-white/40 text-[10px]">0% Watched</span>
-                              )}
-                              {isCurrent && (
-                                <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-extrabold text-[9px] border border-purple-500/30">
-                                  Playing
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] sm:text-[11px] text-white/50 line-clamp-1">
-                              {ep.description || content.description || 'Watch the next exciting installment of the adventure.'}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             )}
         </div>
 
+        {/* Full-bleed dark divider bar matching reference screenshots */}
+        <div className="h-[6px] -mx-3.5 sm:-mx-5 bg-[#090a0d] my-3.5" />
+
         {/* Navigation Tabs: Clean Underline Tabs ("For you" & "Comments") matching reference image */}
-        <div ref={commentsSectionRef} className="pt-2 mb-3">
-          <div className="flex items-center gap-6 border-b border-white/5">
+        <div ref={commentsSectionRef} className="mb-3">
+          <div className="flex items-center gap-6 border-b border-white/10">
               <button 
+                  type="button"
                   onClick={() => { adManager.handleSectionToggleClick(!!user?.isPremium); setActiveTab('forYou'); }}
-                  className={`relative pb-2.5 font-bold text-sm sm:text-base transition cursor-pointer ${
+                  className={`relative pb-2.5 text-[15px] sm:text-[16px] transition-colors cursor-pointer ${
                     activeTab === 'forYou' 
-                      ? 'text-white' 
-                      : 'text-zinc-400 hover:text-white/80'
+                      ? 'text-white font-bold' 
+                      : 'text-[#7c808b] font-normal hover:text-white/80'
                   }`}
               >
                   <span>For you</span>
                   {activeTab === 'forYou' && (
-                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-[3px] bg-white rounded-full" />
+                    <span className="absolute bottom-0 inset-x-0 h-[3px] bg-white rounded-full" />
                   )}
               </button>
               
               <button 
+                  type="button"
                   onClick={() => { adManager.handleSectionToggleClick(!!user?.isPremium); setActiveTab('comments'); }}
-                  className={`relative pb-2.5 font-bold text-sm sm:text-base transition cursor-pointer ${
+                  className={`relative pb-2.5 text-[15px] sm:text-[16px] transition-colors cursor-pointer ${
                     activeTab === 'comments' 
-                      ? 'text-white' 
-                      : 'text-zinc-400 hover:text-white/80'
+                      ? 'text-white font-bold' 
+                      : 'text-[#7c808b] font-normal hover:text-white/80'
                   }`}
               >
                   <span>Comments({comments.length > 99 ? '99+' : comments.length})</span>
                   {activeTab === 'comments' && (
-                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-[3px] bg-white rounded-full" />
+                    <span className="absolute bottom-0 inset-x-0 h-[3px] bg-white rounded-full" />
                   )}
               </button>
           </div>
         </div>
 
-        {/* TAB 1: FOR YOU - NEW 9-CARD DESIGN (Clean Poster + Top-Right Language Tag + Dark Footer Strip) */}
+        {/* TAB 1: FOR YOU - 9-CARD DESIGN (Clean Poster + Top-Right Language Tag + Dark Footer Strip) */}
         {activeTab === 'forYou' && (
-            <div className="animate-in fade-in duration-300">
+            <div>
                 <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5 pt-1">
                     {recommendationGrid.map((item, idx) => {
                         const displayPoster =
@@ -3747,28 +3550,29 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                                 }
                                 scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                               }}
-                              className="group relative flex flex-col cursor-pointer transition-transform duration-200 active:scale-95 select-none rounded-lg overflow-hidden bg-[#161922] border border-white/5 shadow-md shadow-black/40"
+                              className="group relative flex flex-col cursor-pointer transition-transform duration-150 active:scale-95 select-none rounded-lg overflow-hidden bg-[#181a22] border border-white/5"
                           >
                              {/* Clean Vertical Poster Box */}
                              <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#1C1C1E]">
                                <img 
                                   src={displayPoster} 
                                   alt={displayTitle} 
-                                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" 
+                                  className="h-full w-full object-cover" 
                                   loading="lazy"
+                                  decoding="async"
                                />
 
                                {/* Top Right Language Badge */}
                                {langBadge && (
-                                 <div className="absolute top-1.5 right-1.5 rounded bg-black/75 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-[2px] pointer-events-none">
+                                 <div className="absolute top-1.5 right-1.5 rounded bg-black/75 px-2 py-0.5 text-[10px] font-medium text-white pointer-events-none">
                                    {langBadge}
                                  </div>
                                )}
                              </div>
 
                              {/* Attached Dark Footer Strip with Single-Line Truncated Title */}
-                             <div className="bg-[#161922] px-2 py-2 text-left">
-                               <h3 className="truncate text-[12px] sm:text-[13px] font-medium text-[#E4E4E7] group-hover:text-white transition-colors leading-tight" title={displayTitle}>
+                             <div className="bg-[#181a22] px-2 py-2 text-left">
+                               <h3 className="truncate text-[12px] sm:text-[13px] font-normal text-[#c8cbd2] group-hover:text-white transition-colors leading-tight" title={displayTitle}>
                                  {displayTitle}
                                </h3>
                              </div>
@@ -3781,7 +3585,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
         {/* TAB 2: COMMENTS - FULLY FUNCTIONAL */}
         {activeTab === 'comments' && (
-          <div className="flex flex-col gap-4 animate-in fade-in duration-300">
+          <div className="flex flex-col gap-4 animate-in fade-in duration-200">
             {/* Post Comment Input Box with User Avatar */}
             <div className="bg-[#121215] border border-white/5 rounded-2xl p-3.5">
               <div className="flex gap-3">
@@ -3856,14 +3660,82 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
       </div>
 
-      {/* Details Info Slide-Up Sheet Anchored Directly Below Video Player */}
+      {/* ALL EPISODES GRID MODAL (Grid View Only — Thumbnail View Discontinued, Static Purple Gradient) */}
+      {isAllEpisodesModalOpen && !isMovie && content && (
+        <div
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/65 flex items-end justify-center p-0"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+          onClick={() => setIsAllEpisodesModalOpen(false)}
+        >
+          <div
+            className="bg-[#101116] border-t border-white/10 w-full h-full rounded-t-2xl flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom-4 duration-150"
+            style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-4 py-3.5 border-b border-white/10 bg-[#14151c] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-[15px] sm:text-base font-bold text-white truncate">
+                  All Episodes ({activeSeasonEpisodes.length || 1})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAutoNextEnabled(!isAutoNextEnabled)}
+                  className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 cursor-pointer transition shrink-0"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${isAutoNextEnabled ? 'bg-emerald-400' : 'bg-white/30'}`} />
+                  <span>Auto Next</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAllEpisodesModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Pure Grid of Episode Boxes (Static Purple Gradient on Selected, Zero Animation) */}
+            <div className="p-4 overflow-y-auto flex-1 overscroll-contain">
+              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2.5">
+                {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
+                  const isCurrent = selectedEpisodeIndex === idx;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        adManager.handleEpisodeClick(!!user?.isPremium);
+                        handleSelectEpisode(idx);
+                        setIsAllEpisodesModalOpen(false);
+                      }}
+                      className={`h-[48px] flex items-center justify-center rounded-[6px] text-[14px] transition-colors cursor-pointer active:scale-95 ${
+                        isCurrent
+                          ? 'bg-gradient-to-b from-[#8b5cf6] to-[#6d28d9] border border-[#c4b5fd] shadow-[0_0_12px_rgba(139,92,246,0.45)] text-white font-semibold'
+                          : 'bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] font-medium'
+                      }`}
+                    >
+                      {(idx + 1).toString().padStart(2, '0')}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details Info Slide-Up Sheet Anchored Directly Below Video Player (GPU-Optimized) */}
       {showDetails && content && (
         <div 
-          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-0 animate-in fade-in duration-200"
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/65 flex items-end justify-center p-0"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
           onClick={() => setShowDetails(false)}
         >
           <div 
-            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
+            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-4 duration-150"
+            style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -3948,14 +3820,16 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       {/* Modern Report Modal with Selectable Categories */}
       {reportModalOpen && reportingTarget && (
         <div 
-          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/85 backdrop-blur-md flex items-end justify-center p-0 animate-in fade-in duration-200"
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/75 flex items-end justify-center p-0"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
           onClick={() => {
             setReportModalOpen(false);
             setReportingTarget(null);
           }}
         >
           <div 
-            className="bg-[#18181F] border-t border-white/15 w-full h-full rounded-t-2xl p-4 sm:p-5 overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200 shadow-2xl flex flex-col"
+            className="bg-[#18181F] border-t border-white/15 w-full h-full rounded-t-2xl p-4 sm:p-5 overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-150 shadow-2xl flex flex-col"
+            style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -4075,14 +3949,16 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         </div>
       )}
 
-      {/* Server Selection Slide-Up Sheet Anchored Directly Below Video Player */}
+      {/* Server Selection Slide-Up Sheet Anchored Directly Below Video Player (GPU-Optimized) */}
       {isServerModalOpen && content && (
         <div
-          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-0 animate-in fade-in duration-200"
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/65 flex items-end justify-center p-0"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
           onClick={() => setIsServerModalOpen(false)}
         >
           <div
-            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
+            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-4 duration-150"
+            style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

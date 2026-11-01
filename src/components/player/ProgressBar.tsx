@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Hls from 'hls.js';
 
 interface ProgressBarProps {
   currentTime: number; // in seconds
@@ -8,6 +9,7 @@ interface ProgressBarProps {
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
   videoElement?: HTMLVideoElement | null;
+  previewStreamUrl?: string;
   posterUrl?: string;
   timeOffset?: number;
   skipMarkers?: {
@@ -25,6 +27,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   onScrubStart,
   onScrubEnd,
   videoElement,
+  previewStreamUrl,
   posterUrl,
   timeOffset = 0,
   skipMarkers,
@@ -33,11 +36,17 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
-  const [hasCanvasFrame, setHasCanvasFrame] = useState(false);
+  const [hasPreviewFrame, setHasPreviewFrame] = useState(false);
   const dragTimeRef = useRef<number | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const lastPreviewSeekRef = useRef<number>(0);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewHlsRef = useRef<Hls | null>(null);
+  const loadedPreviewUrlRef = useRef<string>('');
+  const lastPreviewSeekMsRef = useRef<number>(0);
+  const pendingPreviewTimeRef = useRef<number | null>(null);
+  const isPreviewSeekingRef = useRef<boolean>(false);
+
+  const isScrubActive = isDragging || isHovered;
 
   const displayTime = isDragging && dragTime !== null
     ? dragTime
@@ -81,26 +90,109 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     return null;
   };
 
-  // Draw live video frame into the preview thumbnail canvas
-  const drawVideoFrameToCanvas = React.useCallback(() => {
-    const canvas = previewCanvasRef.current;
-    const video = videoElement;
-    if (!canvas || !video || video.readyState < 2) return;
-    try {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      setHasCanvasFrame(true);
-    } catch {
-      // Cross-origin stream without CORS headers falls back to poster/scene card
-    }
-  }, [videoElement]);
+  // Resolve effective stream URL for the dedicated preview video element
+  const effectivePreviewUrl = previewStreamUrl || videoElement?.currentSrc || videoElement?.src || '';
 
+  // Clean up preview HLS instance when stream URL changes or component unmounts
   useEffect(() => {
-    if (isDragging || isHovered) {
-      drawVideoFrameToCanvas();
+    return () => {
+      if (previewHlsRef.current) {
+        previewHlsRef.current.destroy();
+        previewHlsRef.current = null;
+      }
+      loadedPreviewUrlRef.current = '';
+      setHasPreviewFrame(false);
+    };
+  }, [effectivePreviewUrl]);
+
+  // Lazily initialize and seek the dedicated muted preview <video> element to the target scrubbed timestamp
+  useEffect(() => {
+    if (!isScrubActive || !effectivePreviewUrl || duration <= 0) return;
+    const pVideo = previewVideoRef.current;
+    if (!pVideo) return;
+
+    const localTarget = Math.max(0, displayTime - timeOffset);
+
+    // 1. Initialize preview stream on first scrub/hover for this URL
+    if (loadedPreviewUrlRef.current !== effectivePreviewUrl) {
+      loadedPreviewUrlRef.current = effectivePreviewUrl;
+      setHasPreviewFrame(false);
+      isPreviewSeekingRef.current = false;
+
+      if (previewHlsRef.current) {
+        previewHlsRef.current.destroy();
+        previewHlsRef.current = null;
+      }
+
+      const lower = effectivePreviewUrl.toLowerCase();
+      const isHls =
+        lower.includes('.m3u8') ||
+        lower.includes('/proxy/m3u8') ||
+        lower.includes('master.txt') ||
+        lower.includes('/offline-vault/');
+
+      if (isHls && Hls.isSupported()) {
+        const hls = new Hls({
+          startPosition: localTarget,
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 2,
+          maxMaxBufferLength: 4,
+          backBufferLength: 0,
+          maxBufferSize: 4 * 1000 * 1000,
+        });
+        previewHlsRef.current = hls;
+        hls.loadSource(effectivePreviewUrl);
+        hls.attachMedia(pVideo);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+          // Lock preview player onto the smallest/fastest resolution level for instant frame decoding
+          if (data.levels && data.levels.length > 0) {
+            let lowestIdx = 0;
+            let lowestHeight = data.levels[0]?.height || 9999;
+            data.levels.forEach((lvl: any, idx: number) => {
+              const h = lvl.height || 9999;
+              if (h < lowestHeight) {
+                lowestHeight = h;
+                lowestIdx = idx;
+              }
+            });
+            hls.startLevel = lowestIdx;
+            hls.currentLevel = lowestIdx;
+            hls.loadLevel = lowestIdx;
+          }
+          try {
+            pVideo.currentTime = pendingPreviewTimeRef.current ?? localTarget;
+          } catch {}
+        });
+      } else {
+        pVideo.src = effectivePreviewUrl;
+        pVideo.preload = 'auto';
+        const onLoadedMeta = () => {
+          try {
+            pVideo.currentTime = pendingPreviewTimeRef.current ?? localTarget;
+          } catch {}
+        };
+        pVideo.addEventListener('loadedmetadata', onLoadedMeta, { once: true });
+        pVideo.load();
+      }
     }
-  }, [isDragging, isHovered, displayTime, drawVideoFrameToCanvas]);
+
+    // 2. Seek the preview video to the exact target timestamp (throttled for smooth 60fps dragging)
+    pendingPreviewTimeRef.current = localTarget;
+    const now = Date.now();
+    if (!isPreviewSeekingRef.current && now - lastPreviewSeekMsRef.current >= 90) {
+      if (Math.abs((pVideo.currentTime || 0) - localTarget) > 0.35) {
+        lastPreviewSeekMsRef.current = now;
+        isPreviewSeekingRef.current = true;
+        try {
+          pVideo.currentTime = localTarget;
+        } catch {
+          isPreviewSeekingRef.current = false;
+        }
+      }
+    }
+  }, [isScrubActive, displayTime, effectivePreviewUrl, duration, timeOffset]);
 
   const getTimeFromEvent = (e: React.MouseEvent | MouseEvent | TouchEvent | React.TouchEvent) => {
     if (!barRef.current || duration <= 0) return 0;
@@ -123,35 +215,6 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     return ratio * duration;
   };
 
-  const maybeUpdateBufferedPreviewFrame = (targetGlobalTime: number) => {
-    const video = videoElement;
-    if (!video || video.readyState < 2) return;
-    const now = Date.now();
-    if (now - lastPreviewSeekRef.current < 180) return;
-
-    const localTarget = Math.max(0, targetGlobalTime - timeOffset);
-    // If target time is already buffered in the video element, gently update frame when paused or local
-    try {
-      const bufferedRanges = video.buffered;
-      let isTargetBuffered = false;
-      for (let i = 0; i < bufferedRanges.length; i++) {
-        if (localTarget >= bufferedRanges.start(i) && localTarget <= bufferedRanges.end(i)) {
-          isTargetBuffered = true;
-          break;
-        }
-      }
-      if (isTargetBuffered && (video.paused || video.currentSrc?.startsWith('blob:') || video.currentSrc?.includes('127.0.0.1'))) {
-        lastPreviewSeekRef.current = now;
-        video.currentTime = localTarget;
-        requestAnimationFrame(() => drawVideoFrameToCanvas());
-      } else {
-        drawVideoFrameToCanvas();
-      }
-    } catch {
-      drawVideoFrameToCanvas();
-    }
-  };
-
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
     setIsDragging(true);
@@ -159,7 +222,6 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     const newTime = getTimeFromEvent(e);
     setDragTime(newTime);
     dragTimeRef.current = newTime;
-    maybeUpdateBufferedPreviewFrame(newTime);
   };
 
   const handleMouseMoveHover = (e: React.MouseEvent) => {
@@ -174,7 +236,6 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         const newTime = getTimeFromEvent(e);
         setDragTime(newTime);
         dragTimeRef.current = newTime;
-        maybeUpdateBufferedPreviewFrame(newTime);
       }
     };
 
@@ -221,29 +282,52 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       className="relative flex h-6 w-full cursor-pointer items-center py-2 select-none group touch-none"
       data-interactive="true"
     >
-      {/* Floating Video Preview Frame during Drag/Hover */}
-      {(isHovered || isDragging) && duration > 0 && (
+      {/* Floating Video Preview Frame during Drag/Hover (keeps previewVideo mounted once initialized so seeking is instant) */}
+      {duration > 0 && (
         <div
-          style={{ left: `${clampedPreviewPercent}%` }}
-          className="absolute -top-24 sm:-top-28 -translate-x-1/2 z-40 flex flex-col items-center pointer-events-none animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            left: `${clampedPreviewPercent}%`,
+            visibility: isScrubActive ? 'visible' : 'hidden',
+            opacity: isScrubActive ? 1 : 0,
+          }}
+          className="absolute -top-24 sm:-top-28 -translate-x-1/2 z-40 flex flex-col items-center pointer-events-none transition-opacity duration-100"
         >
           <div className="relative w-32 h-18 sm:w-36 sm:h-20 rounded-lg overflow-hidden bg-[#0D0D14] border-2 border-[#8B5CF6]/80 shadow-[0_8px_28px_rgba(0,0,0,0.85)] flex items-center justify-center">
-            {posterUrl && (
+            {posterUrl && !hasPreviewFrame && (
               <img
                 src={posterUrl}
                 alt=""
-                className="absolute inset-0 w-full h-full object-cover opacity-55"
+                className="absolute inset-0 w-full h-full object-cover opacity-45"
               />
             )}
-            <canvas
-              ref={previewCanvasRef}
-              width={160}
-              height={90}
-              className={`relative z-10 w-full h-full object-cover transition-opacity duration-150 ${
-                hasCanvasFrame ? 'opacity-100' : 'opacity-0'
+            <video
+              ref={previewVideoRef}
+              muted
+              playsInline
+              preload="metadata"
+              referrerPolicy="no-referrer"
+              onLoadedData={() => setHasPreviewFrame(true)}
+              onSeeked={() => {
+                setHasPreviewFrame(true);
+                isPreviewSeekingRef.current = false;
+                // If user dragged further while previous seek was in flight, immediately seek to latest target
+                const pVideo = previewVideoRef.current;
+                const latestTarget = pendingPreviewTimeRef.current;
+                if (pVideo && latestTarget !== null && Math.abs((pVideo.currentTime || 0) - latestTarget) > 0.6) {
+                  lastPreviewSeekMsRef.current = Date.now();
+                  isPreviewSeekingRef.current = true;
+                  try {
+                    pVideo.currentTime = latestTarget;
+                  } catch {
+                    isPreviewSeekingRef.current = false;
+                  }
+                }
+              }}
+              className={`relative z-10 w-full h-full object-cover transition-opacity duration-100 ${
+                hasPreviewFrame ? 'opacity-100' : 'opacity-0'
               }`}
             />
-            <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+            <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/85 via-transparent to-transparent" />
 
             {/* Chapter / Skip Marker Badge inside Preview Frame */}
             {activeMarkerLabel && (
@@ -303,3 +387,4 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     </div>
   );
 };
+

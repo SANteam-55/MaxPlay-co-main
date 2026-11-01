@@ -2321,6 +2321,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
               handleControlInteraction();
             }}
             videoElement={videoRef.current}
+            previewStreamUrl={resolvedStreamUrl}
             posterUrl={posterUrl}
             timeOffset={timeOffset}
             currentLanguage={currentLanguage}
