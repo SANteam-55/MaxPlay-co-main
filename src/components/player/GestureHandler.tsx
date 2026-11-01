@@ -39,6 +39,7 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
   const isDraggingRef = useRef<boolean>(false);
   const dragSideRef = useRef<'left' | 'right' | null>(null);
   const animTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const singleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTouchTimeRef = useRef<number>(0);
   const longPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressingRef = useRef<boolean>(false);
@@ -66,6 +67,7 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
   useEffect(() => {
     return () => {
       if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+      if (singleTapTimeoutRef.current) clearTimeout(singleTapTimeoutRef.current);
       if (longPressTimeoutRef.current) clearTimeout(longPressTimeoutRef.current);
       if (isLongPressingRef.current && onLongPressEnd) onLongPressEnd();
     };
@@ -111,6 +113,10 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       if (!isLocked && onLongPressStart) {
         longPressTimeoutRef.current = setTimeout(() => {
           if (!isDraggingRef.current) {
+            if (singleTapTimeoutRef.current) {
+              clearTimeout(singleTapTimeoutRef.current);
+              singleTapTimeoutRef.current = null;
+            }
             isLongPressingRef.current = true;
             onLongPressStart();
           }
@@ -209,15 +215,19 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       return;
     }
 
-    // Check if double tap (< 350ms from last tap and near same point)
-    if (timeSinceLastTap < 350 && lastTapPosRef.current) {
+    // Check if double tap (< 320ms from last tap and near same point)
+    if (timeSinceLastTap < 320 && lastTapPosRef.current) {
       const dist = Math.hypot(
         touch.clientX - lastTapPosRef.current.x,
         touch.clientY - lastTapPosRef.current.y
       );
 
       if (dist < 80) {
-        // Double tap confirmed!
+        // Double tap confirmed! Cancel pending single-tap control toggle so controls do not appear
+        if (singleTapTimeoutRef.current) {
+          clearTimeout(singleTapTimeoutRef.current);
+          singleTapTimeoutRef.current = null;
+        }
         lastTapTimeRef.current = 0;
         lastTapPosRef.current = null;
 
@@ -235,11 +245,17 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       }
     }
 
-    // First tap -> Trigger instant toggle
+    // First tap -> Schedule single-tap control toggle unless a second tap arrives within 240ms
     lastTapTimeRef.current = now;
     lastTapPosRef.current = { x: touch.clientX, y: touch.clientY };
 
-    onToggleControls(); // Instant response
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+    }
+    singleTapTimeoutRef.current = setTimeout(() => {
+      singleTapTimeoutRef.current = null;
+      onToggleControls();
+    }, 240);
     touchStartPosRef.current = null;
   };
 
@@ -249,6 +265,10 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
     clearLongPress();
     if (!isLocked && onLongPressStart) {
       longPressTimeoutRef.current = setTimeout(() => {
+        if (singleTapTimeoutRef.current) {
+          clearTimeout(singleTapTimeoutRef.current);
+          singleTapTimeoutRef.current = null;
+        }
         isLongPressingRef.current = true;
         onLongPressStart();
       }, 300);
@@ -279,10 +299,22 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
       return;
     }
 
-    // Ignore second click of a double click so it doesn't toggle controls off again unnecessarily
-    if (e.detail >= 2) return;
+    // Ignore second click of a double click so it doesn't toggle controls
+    if (e.detail >= 2) {
+      if (singleTapTimeoutRef.current) {
+        clearTimeout(singleTapTimeoutRef.current);
+        singleTapTimeoutRef.current = null;
+      }
+      return;
+    }
 
-    onToggleControls(); // Instant response
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+    }
+    singleTapTimeoutRef.current = setTimeout(() => {
+      singleTapTimeoutRef.current = null;
+      onToggleControls();
+    }, 230);
   };
 
   const handleMouseLeave = () => {
@@ -295,6 +327,11 @@ export const GestureHandler: React.FC<GestureHandlerProps> = ({
   const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (Date.now() - lastTouchTimeRef.current < 600) return;
     if (isLocked) return;
+
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+      singleTapTimeoutRef.current = null;
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;

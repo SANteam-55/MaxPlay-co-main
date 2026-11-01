@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Bell, Flame, Sparkles, Film, Filter, ArrowUp, Tv, Clapperboard, Swords, Smile, Heart, Zap, Star, Trophy, Crown, Clock, Compass, Rocket, PlaySquare, Gamepad2, Ghost, Map as MapIcon, PlayCircle, Download, X, CheckCircle2 } from 'lucide-react';
+import { Search, Bell, Flame, Sparkles, Film, Filter, ArrowUp, Tv, Clapperboard, Swords, Smile, Heart, Zap, Star, Trophy, Crown, Clock, Compass, Rocket, PlaySquare, Gamepad2, Ghost, Map as MapIcon, PlayCircle, Play, Download, X, CheckCircle2 } from 'lucide-react';
 import { LogoPlaceholder } from '../../components/common/LogoPlaceholder';
 import { SectionHeader } from '../../components/common/SectionHeader';
 import { ContentCard } from '../../components/common/ContentCard';
@@ -12,7 +12,7 @@ import { ContentItem } from '../../types';
 import { adManager } from '../../services/adService';
 import { useAuth } from '../../hooks/useAuth';
 import { useGeneralSettings } from '../../hooks/useGeneralSettings';
-import { subscribeToSearchSettings } from '../../services/contentService';
+import { subscribeToSearchSettings, subscribeToWatchHistory } from '../../services/contentService';
 import { ThreeColumnRow } from '../../components/home/ThreeColumnRow';
 import { NetworkGridRow } from '../../components/home/NetworkGridRow';
 import { getDefaultRowsForScreen } from '../../utils/screenRowDefaults';
@@ -68,6 +68,123 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [homeRowsByScreen]);
 
   const [activeTab, setActiveTab] = useState('Trending');
+  const [firestoreWatchHistory, setFirestoreWatchHistory] = useState<any[]>([]);
+  const [localHistoryTick, setLocalHistoryTick] = useState(0);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setFirestoreWatchHistory([]);
+      return;
+    }
+    const unsub = subscribeToWatchHistory(user.uid, (items) => {
+      setFirestoreWatchHistory(Array.isArray(items) ? items : []);
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  useEffect(() => {
+    const refreshLocalHistory = () => setLocalHistoryTick((t) => t + 1);
+    window.addEventListener('MAXPLAY_RESTORE_SCROLL_HOME', refreshLocalHistory);
+    window.addEventListener('focus', refreshLocalHistory);
+    return () => {
+      window.removeEventListener('MAXPLAY_RESTORE_SCROLL_HOME', refreshLocalHistory);
+      window.removeEventListener('focus', refreshLocalHistory);
+    };
+  }, []);
+
+  const continueWatchingItems = useMemo(() => {
+    const mergedMap = new Map<string, any>();
+
+    // 1. Add Firestore watch history items
+    for (const h of firestoreWatchHistory) {
+      const cid = h?.contentId || h?.id;
+      if (!cid) continue;
+      mergedMap.set(String(cid), { ...h, contentId: String(cid) });
+    }
+
+    // 2. Merge local watch history & progress keys so recent local playback is always reflected
+    try {
+      const rawList = localStorage.getItem('maxplay_watch_history');
+      if (rawList) {
+        const parsed = JSON.parse(rawList);
+        if (Array.isArray(parsed)) {
+          for (const h of parsed) {
+            const cid = h?.contentId || h?.id;
+            if (!cid) continue;
+            const existing = mergedMap.get(String(cid));
+            const existingTime = new Date(existing?.watchedAt || existing?.lastWatchedAt || 0).getTime();
+            const localTime = new Date(h?.watchedAt || h?.lastWatchedAt || 0).getTime();
+            if (!existing || localTime >= existingTime) {
+              mergedMap.set(String(cid), { ...(existing || {}), ...h, contentId: String(cid) });
+            }
+          }
+        }
+      }
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith('maxplay_series_progress_')) {
+          const raw = localStorage.getItem(key);
+          if (!raw) continue;
+          const p = JSON.parse(raw);
+          const cid = p?.contentId || key.split('_').pop();
+          if (!cid) continue;
+          const existing = mergedMap.get(String(cid));
+          const existingTime = new Date(existing?.watchedAt || existing?.lastWatchedAt || 0).getTime();
+          const localTime = new Date(p?.lastWatchedAt || p?.watchedAt || 0).getTime();
+          if (!existing || localTime >= existingTime) {
+            mergedMap.set(String(cid), { ...(existing || {}), ...p, contentId: String(cid) });
+          }
+        }
+      }
+    } catch {}
+
+    const enriched = Array.from(mergedMap.values())
+      .map((entry) => {
+        const matchedContent = contentList.find((c: any) => String(c.id) === String(entry.contentId));
+        if (!matchedContent) return null;
+        const duration = Number(entry.duration || matchedContent.duration || 0);
+        const currentTime = Number(entry.currentTime || entry.watchedSeconds || 0);
+        let percentWatched = Number(entry.percentWatched || 0);
+        if (!percentWatched && duration > 0 && currentTime > 0) {
+          percentWatched = Math.round((currentTime / duration) * 100);
+        }
+        percentWatched = Math.min(98, Math.max(8, percentWatched || 18));
+
+        const isSeriesItem =
+          matchedContent.type === 'series' ||
+          matchedContent.type === 'tv' ||
+          matchedContent.type === 'anime' ||
+          matchedContent.type === 'short_tv' ||
+          (Array.isArray(matchedContent.seasonsData) && matchedContent.seasonsData.length > 0) ||
+          (Array.isArray(matchedContent.episodesList) && matchedContent.episodesList.length > 0);
+
+        const seasonNum = Number(entry.seasonIndex ?? 0) + 1;
+        const epNum = Number(entry.currentEpisode || (entry.episodeIndex !== undefined ? Number(entry.episodeIndex) + 1 : 1));
+        const footerLabel = isSeriesItem
+          ? `Season ${seasonNum} - Episode ${epNum}`
+          : matchedContent.title || 'Resume Movie';
+
+        return {
+          content: matchedContent,
+          history: entry,
+          percentWatched,
+          footerLabel,
+          sortTime: new Date(entry.watchedAt || entry.lastWatchedAt || 0).getTime(),
+        };
+      })
+      .filter(Boolean) as {
+        content: ContentItem;
+        history: any;
+        percentWatched: number;
+        footerLabel: string;
+        sortTime: number;
+      }[];
+
+    enriched.sort((a, b) => b.sortTime - a.sortTime);
+    return enriched.slice(0, 10);
+  }, [firestoreWatchHistory, contentList, localHistoryTick]);
 
   useEffect(() => {
     if (hotTabs.length > 0 && !hotTabs.includes(activeTab)) {
@@ -548,18 +665,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               title={`Top 10 in ${activeTab}`}
               icon={<Trophy className="h-5 w-5 text-amber-400" />}
             />
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
-              {top10.map((item: any, index: number) => (
-                <div key={`${item.id}-${index}`} className="relative flex items-end">
-                  {/* Big Number */}
-                  <span className="absolute -left-3 -bottom-4 text-[80px] font-black text-[#1C1C1E] leading-none drop-shadow-[0_0_10px_rgba(255,255,255,0.1)] z-0" style={{ WebkitTextStroke: '2px #3F3F46' }}>
-                    {index + 1}
-                  </span>
-                  <div className="z-10 ml-8">
-                    <ContentCard item={item} onPress={handleContentClick} />
+            <div className="flex items-center gap-3.5 overflow-x-auto pb-3 pt-1 scrollbar-none">
+              {top10.map((item: any, index: number) => {
+                const displayPoster = item.customImage || item.posterUrl || item.backdropUrl;
+                const displayTitle = item.customTitle || item.title;
+                return (
+                  <div
+                    key={`${item.id}-${index}`}
+                    onClick={() => handleContentClick(item)}
+                    className="group relative shrink-0 flex items-end pl-5 cursor-pointer select-none active:scale-95 transition-transform"
+                  >
+                    <div className="relative w-[124px] sm:w-[136px] aspect-[2/3] rounded-[12px] overflow-hidden bg-[#14161D] border border-white/10 shadow-[0_8px_20px_rgba(0,0,0,0.65)] z-10">
+                      <img
+                        src={displayPoster}
+                        alt={displayTitle}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/65 via-black/15 to-transparent pointer-events-none" />
+                    </div>
+                    <span
+                      className="
+                        absolute left-0 -bottom-1.5 z-20
+                        font-black text-[74px] sm:text-[82px] leading-[0.82] tracking-tighter
+                        text-black/85 select-none pointer-events-none
+                        drop-shadow-[0_4px_12px_rgba(0,0,0,0.95)]
+                      "
+                      style={{ WebkitTextStroke: '2.5px #FFFFFF' }}
+                    >
+                      {index + 1}
+                    </span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -711,6 +849,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           const titleLower = (row.title || '').toLowerCase();
           const idLower = (row.id || '').toLowerCase();
+          const isContinueWatchingRow =
+            row.style === 'continue_watching' ||
+            titleLower.includes('continue watching') ||
+            idLower.includes('continue_watching') ||
+            idLower.includes('continue-watching');
+          const isTop10Row =
+            row.style === 'top_10' ||
+            row.style === 'top10' ||
+            titleLower.includes('top 10') ||
+            idLower.includes('top_10') ||
+            idLower.includes('top10');
+
+          if (isContinueWatchingRow) {
+            if (continueWatchingItems.length === 0) return null;
+          }
 
           if (row.style === 'seasonal_card') {
             const actualCols = rowContent.filter((item: any) => item.isCollection);
@@ -729,7 +882,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           } else if ((row.style === 'landscape_text' || row.style === 'landscape') && rowContent.some((item: any) => item.isCollection)) {
             rowContent = rowContent.filter((item: any) => item.isCollection);
           }
-          if (rowContent.length === 0 && row.style !== 'continue_watching' && row.style !== 'network_grid' && row.style !== 'networks') return null;
+          if (rowContent.length === 0 && !isContinueWatchingRow && row.style !== 'network_grid' && row.style !== 'networks') return null;
 
           let icon = <Sparkles className="h-5 w-5 text-[#8B5CF6]" />;
           
@@ -845,6 +998,110 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             );
           }
 
+          // Continue Watching Row (Auto-populated up to 10 items from user's watch history, hidden if empty)
+          if (isContinueWatchingRow) {
+            if (continueWatchingItems.length === 0) return null;
+            return (
+              <div key={row.id || row.title} className="mt-5 px-4">
+                <SectionHeader
+                  title={row.title || 'Continue Watching'}
+                  icon={icon}
+                />
+                <div className="flex gap-3 overflow-x-auto pb-4 pt-1 scrollbar-none">
+                  {continueWatchingItems.map(({ content: cwItem, percentWatched, footerLabel }, index) => {
+                    const poster = cwItem.customImage || cwItem.posterUrl || cwItem.backdropUrl;
+                    return (
+                      <div
+                        key={`cw-${cwItem.id}-${index}`}
+                        onClick={() => handleContentClick(cwItem)}
+                        className="group relative shrink-0 w-[134px] sm:w-[148px] flex flex-col rounded-[6px] overflow-hidden bg-[#1B1E26] border border-white/[0.08] shadow-[0_6px_18px_rgba(0,0,0,0.55)] cursor-pointer select-none active:scale-95 transition-transform"
+                      >
+                        {/* Vertical Poster + Centered Play Circle */}
+                        <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#12141A]">
+                          <img
+                            src={poster}
+                            alt={cwItem.title}
+                            loading="lazy"
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors" />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-11 h-11 rounded-full bg-black/45 backdrop-blur-[2px] border-[2px] border-white flex items-center justify-center shadow-[0_4px_16px_rgba(0,0,0,0.65)] group-hover:scale-110 transition-transform">
+                              <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* MaxPlay Purple Gradient Progress Track */}
+                        <div className="w-full h-[4px] bg-[#9CA3AF]/35 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.max(6, percentWatched))}%` }}
+                          />
+                        </div>
+
+                        {/* Dark Footer Strip with Season/Episode or Title */}
+                        <div className="w-full bg-[#1B1E26] px-2.5 py-2.5 flex items-center justify-start">
+                          <span className="truncate text-[12px] font-semibold text-white tracking-tight leading-snug">
+                            {footerLabel}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          // Top 10 Ranking Row (Single horizontal scrolling line 1, 2, 3...)
+          if (isTop10Row) {
+            const top10Items = rowContent.slice(0, 10);
+            if (top10Items.length === 0) return null;
+            return (
+              <div key={row.id || row.title} className="mt-5 px-4">
+                <SectionHeader
+                  title={row.title}
+                  icon={icon}
+                />
+                <div className="flex items-center gap-3.5 overflow-x-auto pb-4 pt-1 scrollbar-none">
+                  {top10Items.map((item: any, index: number) => {
+                    const displayPoster = item.customImage || item.posterUrl || item.backdropUrl;
+                    const displayTitle = item.customTitle || item.title;
+                    return (
+                      <div
+                        key={`${item.id}-${index}`}
+                        onClick={() => handleContentClick(item)}
+                        className="group relative shrink-0 flex items-end pl-5 cursor-pointer select-none active:scale-95 transition-transform"
+                      >
+                        <div className="relative w-[124px] sm:w-[136px] aspect-[2/3] rounded-[12px] overflow-hidden bg-[#14161D] border border-white/10 shadow-[0_8px_20px_rgba(0,0,0,0.65)] z-10">
+                          <img
+                            src={displayPoster}
+                            alt={displayTitle}
+                            loading="lazy"
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/65 via-black/15 to-transparent pointer-events-none" />
+                        </div>
+                        <span
+                          className="
+                            absolute left-0 -bottom-1.5 z-20
+                            font-black text-[74px] sm:text-[82px] leading-[0.82] tracking-tighter
+                            text-black/85 select-none pointer-events-none
+                            drop-shadow-[0_4px_12px_rgba(0,0,0,0.95)]
+                          "
+                          style={{ WebkitTextStroke: '2.5px #FFFFFF' }}
+                        >
+                          {index + 1}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
           // Three Column Mode Section (3-col vertical grid with no horizontal scroll)
           if (style === 'three_column' || style === 'three_column_grid') {
             return (
@@ -938,21 +1195,36 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   } else if (style === 'classic_anime') {
                     const displayPoster = item.customImage || item.posterUrl;
                     const displayTitle = item.customTitle || item.title;
+                    const rawLang =
+                      item.language ||
+                      (Array.isArray(item.languages) && item.languages.length > 0 ? item.languages[0] : '') ||
+                      (Array.isArray(item.availableLanguages) && item.availableLanguages.length > 0 ? item.availableLanguages[0] : '');
+                    const languageBadge = rawLang
+                      ? String(rawLang).replace(/\s*(dub|dubbed|sub|subbed)\s*/gi, '').trim()
+                      : '';
                     return (
                       <div 
                         key={`${item.id}-${index}`} 
                         onClick={() => handleContentClick(item)} 
-                        className="group relative shrink-0 w-[90px] sm:w-[100px] cursor-pointer hover:scale-[1.02] active:scale-95 transition-transform"
+                        className="group relative shrink-0 w-[108px] sm:w-[118px] flex flex-col rounded-[8px] overflow-hidden bg-[#161922] border border-white/[0.06] shadow-md cursor-pointer hover:scale-[1.02] active:scale-95 transition-transform"
                       >
-                        <div className="relative w-full aspect-[3/4] rounded-lg overflow-hidden bg-[#1A1A1A]">
+                        <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#121318]">
                           <img 
                             src={displayPoster} 
                             alt={displayTitle} 
+                            loading="lazy"
                             className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
                           />
+                          {languageBadge && (
+                            <div className="absolute top-1.5 right-1.5 z-10 px-2 py-0.5 rounded-[5px] bg-black/65 backdrop-blur-sm">
+                              <span className="text-[10px] font-medium text-white leading-none tracking-tight">
+                                {languageBadge}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <div className="mt-2 text-left">
-                          <h3 className="truncate block text-[13px] font-medium text-white group-hover:text-[#8B5CF6] transition-colors" title={displayTitle}>
+                        <div className="w-full bg-[#161922] px-2 py-2 flex items-center">
+                          <h3 className="truncate block text-[12px] font-normal text-[#E5E7EB] group-hover:text-white transition-colors" title={displayTitle}>
                             {displayTitle}
                           </h3>
                         </div>

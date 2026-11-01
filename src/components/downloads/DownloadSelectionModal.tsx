@@ -12,6 +12,9 @@ import {
   AlertCircle,
   AlertTriangle,
   Trash2,
+  ChevronDown,
+  Crown,
+  HelpCircle,
 } from 'lucide-react';
 import { ContentItem } from '../../types';
 import { downloadManager } from '../../services/DownloadManager';
@@ -1592,46 +1595,33 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
     onClose();
   };
 
+  const [openResourceDropdown, setOpenResourceDropdown] = useState<'language' | 'season' | 'server' | null>(null);
+
+  const formatEpDuration = (rawSec?: number) => {
+    const sec = rawSec && rawSec > 60 ? rawSec : isMovie ? 7100 : 1465;
+    const mins = Math.floor(sec / 60);
+    const remSec = Math.floor(sec % 60);
+    return `${mins}:${remSec.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 flex flex-col bg-black/65 backdrop-blur-[2px] animate-in fade-in duration-200"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex flex-col w-full max-w-lg max-h-[90vh] bg-[#121216] border border-[#27272A] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-200 select-none text-left"
+        className="flex flex-col w-full h-full bg-[#101116] border-t border-white/10 rounded-t-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.9)] overflow-hidden animate-in slide-in-from-bottom duration-200 select-none text-left"
       >
-        {/* MODAL HEADER */}
-        <div className="flex items-center justify-between p-4 border-b border-[#27272A]/70 bg-[#16161C]">
-          <div className="flex items-center gap-3 min-w-0">
-            <img
-              src={content.posterUrl || content.backdropUrl}
-              alt={content.title}
-              className="h-12 w-9 rounded-lg object-cover shadow-md flex-shrink-0 border border-white/10"
-            />
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5">
-                {isMovie ? (
-                  <Film className="h-3.5 w-3.5 text-[#38BDF8]" />
-                ) : (
-                  <Tv className="h-3.5 w-3.5 text-[#EC4899]" />
-                )}
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#A1A1AA]">
-                  {showSummaryReview
-                    ? 'Confirm Download Summary'
-                    : isMovie
-                    ? 'Movie Download'
-                    : 'Series Smart Download'}
-                </span>
-              </div>
-              <h3 className="text-sm sm:text-base font-bold text-white truncate max-w-[260px]">
-                {content.title}
-              </h3>
-            </div>
-          </div>
+        {/* TOP HEADER: "Download" on left, "X" on right */}
+        <div className="flex items-center justify-between px-4 py-3.5 shrink-0">
+          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+            {showSummaryReview ? 'Confirm Download' : 'Download'}
+          </h3>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-[#A1A1AA] hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
@@ -1639,7 +1629,7 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
 
         {/* HLS Mode Requirement Banner if content has no HLS stream */}
         {!isHlsMode && (
-          <div className="mx-4 mt-3 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+          <div className="mx-4 mb-2 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 shrink-0">
             <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
             <div>
               <p className="font-bold text-amber-300">HLS Mode Stream Required</p>
@@ -1650,14 +1640,13 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
           </div>
         )}
 
-        {/* SUMMARY REVIEW SCREEN (Shown before starting series download) */}
+        {/* SUMMARY REVIEW SCREEN (Shown if fallback warnings exist or user confirms queue) */}
         {showSummaryReview ? (
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
-            {/* Top Filter Summary Pill Box */}
-            <div className="p-3.5 rounded-2xl bg-[#181822] border border-purple-500/30 shadow-lg">
+          <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3.5 scrollbar-thin">
+            <div className="p-3.5 rounded-xl bg-[#1a1b22] border border-white/10">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-purple-300 uppercase tracking-wide">
-                  Selected Filter Configuration
+                  Selected Configuration
                 </span>
                 <span className="text-[11px] font-extrabold text-emerald-400">
                   {totalEstimatedMb > 0
@@ -1671,717 +1660,471 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 mt-2">
-                <span className="px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-xs font-bold text-purple-300">
-                  Primary: {modalServer === 'server2' ? 'Server 2' : 'Server 1'}
+                <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-xs font-bold text-purple-300">
+                  {modalServer === 'server2' ? 'Server 2' : 'Server 1'}
                 </span>
-                <span className="px-2.5 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-xs font-bold text-sky-300">
-                  Audio: {selectedLanguage}
+                <span className="px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30 text-xs font-bold text-sky-300">
+                  {selectedLanguage}
                 </span>
-                <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-xs font-bold text-emerald-300">
-                  Target: {activeQualityId.toUpperCase()}
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-xs font-bold text-emerald-300">
+                  {activeQualityId.toUpperCase()}
                 </span>
-                {isSeries && (
-                  <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-bold text-white">
-                    {selectedPlansSummary.sorted.length} Episode
-                    {selectedPlansSummary.sorted.length > 1 ? 's' : ''}
-                  </span>
-                )}
               </div>
             </div>
 
-            {/* Red Alert Banner if any episode lacks the requested quality on both servers */}
             {selectedPlansSummary.fallbackCount > 0 && (
-              <div className="p-3 rounded-2xl bg-red-500/15 border border-red-500/50 flex items-start gap-2.5">
+              <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/50 flex items-start gap-2.5">
                 <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
                 <div className="text-xs text-red-200 leading-relaxed">
                   <span className="font-extrabold text-red-300 block">
                     Quality Notice ({selectedPlansSummary.fallbackCount} Episode
                     {selectedPlansSummary.fallbackCount > 1 ? 's' : ''})
                   </span>
-                  Aapne filter mein{' '}
+                  Selected quality{' '}
                   <span className="font-extrabold text-white underline">
                     {activeQualityId.toUpperCase()}
                   </span>{' '}
-                  select kiya tha, jo niche red-marked episode ke liye Server 1 aur Server 2 dono par
-                  available nahi hai. Isliye best available quality auto-select ho gayi hai. Agar aap
-                  use download nahi karna chahte, to wahin se{' '}
-                  <span className="font-bold text-red-300">Unselect</span> kar sakte hain.
+                  was unavailable for the highlighted episode(s), so the best available quality was automatically selected.
                 </div>
               </div>
             )}
 
-            {/* Info Banner if any episode auto-matched exact quality on the other server */}
-            {selectedPlansSummary.crossServerCount > 0 && (
-              <div className="p-2.5 px-3 rounded-xl bg-amber-500/10 border border-amber-500/35 flex items-center gap-2 text-[11px] text-amber-200">
-                <Sparkles className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                <span>
-                  <strong className="text-amber-300">
-                    {selectedPlansSummary.crossServerCount} Episode
-                    {selectedPlansSummary.crossServerCount > 1 ? 's' : ''}
-                  </strong>{' '}
-                  auto-matched <strong className="text-white">{activeQualityId.toUpperCase()}</strong>{' '}
-                  ({selectedLanguage}) from{' '}
-                  <strong className="text-amber-300">
-                    {modalServer === 'server1' ? 'Server 2' : 'Server 1'}
-                  </strong>
-                  .
-                </span>
-              </div>
-            )}
-
-            {/* Vertical Confirmation Queue List */}
-            <div>
-              <label className="text-xs font-bold text-[#A1A1AA] uppercase tracking-wider mb-2 block">
-                {isMovie
-                  ? 'Item to Download'
-                  : `Episodes Ready to Download (${selectedPlansSummary.sorted.length})`}
-              </label>
-
-              <div className="space-y-2 max-h-[260px] overflow-y-auto p-1.5 bg-[#0E0E12] rounded-2xl border border-[#27272A]/60">
-                {isMovie ? (
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-[#16161C] border border-[#27272A]">
-                    <div className="flex flex-col min-w-0 pr-2">
-                      <span className="text-xs font-bold text-white truncate">{content.title}</span>
-                      <span className="text-[10px] text-[#A1A1AA] mt-0.5">
-                        {selectedLanguage} • {activeQualityId.toUpperCase()} •{' '}
-                        {modalServer === 'server2' ? 'Server 2' : 'Server 1'}
-                      </span>
-                    </div>
-                    <span className="text-xs font-extrabold text-emerald-400 flex-shrink-0">
-                      {totalEstimatedMb > 0
-                        ? totalEstimatedMb >= 1000
-                          ? `${(totalEstimatedMb / 1024).toFixed(2)} GB`
-                          : `${totalEstimatedMb} MB`
-                        : 'HLS Ready'}
-                    </span>
-                  </div>
-                ) : (
-                  selectedPlansSummary.sorted.map((plan, queuePos) => {
-                    const isRedWarning = plan.isFallbackQuality;
-                    const isCrossAuto = plan.isCrossServerAuto && !plan.isFallbackQuality;
-
-                    return (
-                      <div
-                        key={plan.epId || plan.epIndex}
-                        className={`flex flex-col gap-1.5 p-2.5 px-3 rounded-xl border transition ${
-                          isRedWarning
-                            ? 'bg-red-950/30 border-red-500/70 shadow-sm shadow-red-950/40'
-                            : isCrossAuto
-                            ? 'bg-amber-950/20 border-amber-500/40'
-                            : 'bg-[#16161C] border-[#27272A]/80'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <span
-                              className={`flex h-6 w-7 flex-shrink-0 items-center justify-center rounded-lg font-mono text-[11px] font-black border ${
-                                isRedWarning
-                                  ? 'bg-red-500/25 border-red-500/50 text-red-200'
-                                  : 'bg-purple-600/30 border-purple-500/40 text-purple-300'
-                              }`}
-                            >
-                              E{plan.epNumber}
-                            </span>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-xs font-bold text-white truncate">
-                                {plan.epTitle}
-                              </span>
-                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                {/* Quality Pill */}
-                                <span
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
-                                    isRedWarning
-                                      ? 'bg-red-500/30 text-red-200 border border-red-400/50'
-                                      : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                  }`}
-                                >
-                                  {plan.resolvedQuality.toUpperCase()}
-                                </span>
-                                {/* Language Pill */}
-                                <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-bold">
-                                  {plan.language}
-                                </span>
-                                {/* Server Pill */}
-                                <span
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                    plan.resolvedServer === 'server2'
-                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                  }`}
-                                >
-                                  {plan.resolvedServer === 'server2' ? 'Server 2' : 'Server 1'}
-                                  {plan.isCrossServerAuto ? ' (Auto)' : ''}
-                                </span>
-                                {/* Size Pill */}
-                                <span className="text-[10px] font-extrabold text-emerald-400">
-                                  {plan.sizeMb > 0
-                                    ? plan.sizeMb >= 1000
-                                      ? `${(plan.sizeMb / 1024).toFixed(2)} GB`
-                                      : `${plan.sizeMb} MB`
-                                    : queuePos === 0
-                                    ? 'Next'
-                                    : `#${queuePos + 1}`}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Inline Unselect button on every row (highlighted in Red for fallback episodes!) */}
-                          <button
-                            type="button"
-                            onClick={() => unselectEpisodeFromConfirmation(plan.epIndex)}
-                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition cursor-pointer shrink-0 ${
-                              isRedWarning
-                                ? 'bg-red-500 text-white hover:bg-red-600 shadow-sm'
-                                : 'bg-white/5 hover:bg-red-500/20 text-[#A1A1AA] hover:text-red-300 border border-white/10'
-                            }`}
-                            title="Unselect this episode"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            <span>Unselect</span>
-                          </button>
-                        </div>
-
-                        {/* Red Warning Explanation inside the episode card when quality fell back */}
-                        {isRedWarning && (
-                          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-red-300 bg-red-950/60 px-2.5 py-1 rounded-lg border border-red-500/30">
-                            <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />
-                            <span>
-                              {plan.requestedQuality.toUpperCase()} not available for E{plan.epNumber}{' '}
-                              — auto-selected{' '}
-                              <strong className="text-white">
-                                {plan.resolvedQuality.toUpperCase()}
-                              </strong>
-                            </span>
-                          </div>
-                        )}
+            <div className="space-y-2">
+              {selectedPlansSummary.sorted.map((plan) => {
+                const isRedWarning = plan.isFallbackQuality;
+                return (
+                  <div
+                    key={plan.epId || plan.epIndex}
+                    className={`flex items-center justify-between gap-2 p-3 rounded-xl border ${
+                      isRedWarning
+                        ? 'bg-red-950/30 border-red-500/60'
+                        : 'bg-[#181920] border-white/10'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold text-white truncate">
+                        S{(selectedSeasonIdx + 1).toString().padStart(2, '0')} E{plan.epNumber.toString().padStart(2, '0')} • {plan.epTitle}
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                      <div className="text-xs text-zinc-400 mt-0.5">
+                        {plan.resolvedQuality.toUpperCase()} • {plan.language} • {plan.resolvedServer === 'server2' ? 'Server 2' : 'Server 1'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => unselectEpisodeFromConfirmation(plan.epIndex)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white/5 hover:bg-red-500/20 text-zinc-300 hover:text-red-300 border border-white/10 cursor-pointer shrink-0"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : (
-          /* REGULAR SELECTION BODY */
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-            {/* 1. SERVER SOURCE PILL SWITCHER (Separated Server 1 & Server 2) */}
-            {(hasServer1 || hasServer2) && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-bold text-[#A1A1AA] uppercase tracking-wider">
-                    1. Select Server
-                  </label>
-                  <span className="text-[10px] text-emerald-400 font-semibold">
-                    Smart Cross-Server Match Active
-                  </span>
+          /* MAIN DOWNLOAD PANEL MATCHING REFERENCE IMAGE */
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* RESOURCES CARD */}
+            <div className="mx-4 mb-2 p-3.5 rounded-xl bg-[#1a1b22] border border-white/5 shrink-0">
+              {/* Resources Header */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[15px] font-bold text-white">Resources</span>
+                <span className="text-xs text-zinc-400 truncate">
+                  Uploaded by {content.uploader?.name || 'MaxPlay Admin'}
+                </span>
+                <HelpCircle className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+              </div>
+
+              {/* Selector Boxes Row: Language | Season (Series only) | Server */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none">
+                {/* 1. Language Selector Box */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenResourceDropdown((prev) => (prev === 'language' ? null : 'language'))
+                  }
+                  className={`shrink-0 inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                    openResourceDropdown === 'language'
+                      ? 'bg-[#232530] border-[#8B5CF6] text-white'
+                      : 'bg-[#14151b] border-white/15 text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  <span>{selectedLanguage}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${
+                      openResourceDropdown === 'language' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* 2. Season Selector Box (Series ONLY, hidden for Movies) */}
+                {isSeries && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenResourceDropdown((prev) => (prev === 'season' ? null : 'season'))
+                    }
+                    className={`shrink-0 inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                      openResourceDropdown === 'season'
+                        ? 'bg-[#232530] border-[#8B5CF6] text-white'
+                        : 'bg-[#14151b] border-white/15 text-zinc-200 hover:border-white/30'
+                    }`}
+                  >
+                    <span>
+                      {seasonsData[selectedSeasonIdx]?.title ||
+                        `Season ${(selectedSeasonIdx + 1).toString().padStart(2, '0')}`}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${
+                        openResourceDropdown === 'season' ? 'rotate-180 text-white' : ''
+                      }`}
+                    />
+                  </button>
+                )}
+
+                {/* 3. Server Selector Box */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenResourceDropdown((prev) => (prev === 'server' ? null : 'server'))
+                  }
+                  className={`shrink-0 inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                    openResourceDropdown === 'server'
+                      ? 'bg-[#232530] border-[#8B5CF6] text-white'
+                      : 'bg-[#14151b] border-white/15 text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  <span>{modalServer === 'server2' ? 'Server 2' : 'Server 1'}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${
+                      openResourceDropdown === 'server' ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Inline Expandable Dropdown Options when Language, Season, or Server box is clicked */}
+              {openResourceDropdown === 'language' && (
+                <div className="mt-2.5 pt-2.5 border-t border-white/10 flex flex-wrap gap-1.5 animate-in fade-in duration-150">
+                  {availableLanguages.map((lang) => {
+                    const isSelected = selectedLanguage.toLowerCase() === lang.toLowerCase();
+                    return (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => {
+                          setSelectedLanguage(lang);
+                          setOpenResourceDropdown(null);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white'
+                            : 'bg-[#14151b] border-white/10 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {lang}
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+              )}
+
+              {openResourceDropdown === 'season' && isSeries && (
+                <div className="mt-2.5 pt-2.5 border-t border-white/10 flex flex-wrap gap-1.5 animate-in fade-in duration-150">
+                  {seasonsData.map((season, sIdx) => {
+                    const isSelected = selectedSeasonIdx === sIdx;
+                    return (
+                      <button
+                        key={season.id || sIdx}
+                        type="button"
+                        onClick={() => {
+                          handleSelectSeason(sIdx);
+                          setOpenResourceDropdown(null);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white'
+                            : 'bg-[#14151b] border-white/10 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {season.title || `Season ${(sIdx + 1).toString().padStart(2, '0')}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {openResourceDropdown === 'server' && (
+                <div className="mt-2.5 pt-2.5 border-t border-white/10 flex flex-wrap gap-2 animate-in fade-in duration-150">
                   <button
                     type="button"
                     disabled={!hasServer1}
-                    onClick={() => setModalServer('server1')}
-                    className={`flex items-center justify-between py-2 px-3 rounded-full border text-left transition cursor-pointer ${
+                    onClick={() => {
+                      setModalServer('server1');
+                      setOpenResourceDropdown(null);
+                    }}
+                    className={`px-3.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
                       modalServer === 'server1'
-                        ? 'bg-purple-500/20 border-purple-500 text-white shadow-sm shadow-purple-500/20'
+                        ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white'
                         : hasServer1
-                        ? 'bg-[#181820] border-[#27272A] text-[#A1A1AA] hover:text-white'
-                        : 'bg-[#141418] border-[#1F1F24] text-white/25 cursor-not-allowed'
+                        ? 'bg-[#14151b] border-white/10 text-zinc-400 hover:text-white'
+                        : 'bg-[#14151b] border-white/5 text-zinc-600 cursor-not-allowed'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="h-2 w-2 rounded-full bg-purple-400 shrink-0" />
-                      <span className="text-xs font-extrabold truncate">Server 1 (Primary)</span>
-                    </div>
-                    {modalServer === 'server1' && (
-                      <Check className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                    )}
+                    Server 1
                   </button>
-
                   <button
                     type="button"
                     disabled={!hasServer2}
-                    onClick={() => setModalServer('server2')}
-                    className={`flex items-center justify-between py-2 px-3 rounded-full border text-left transition cursor-pointer ${
+                    onClick={() => {
+                      setModalServer('server2');
+                      setOpenResourceDropdown(null);
+                    }}
+                    className={`px-3.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
                       modalServer === 'server2'
-                        ? 'bg-amber-500/20 border-amber-500 text-white shadow-sm shadow-amber-500/20'
+                        ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white'
                         : hasServer2
-                        ? 'bg-[#181820] border-[#27272A] text-[#A1A1AA] hover:text-white'
-                        : 'bg-[#141418] border-[#1F1F24] text-white/25 cursor-not-allowed'
+                        ? 'bg-[#14151b] border-white/10 text-zinc-400 hover:text-white'
+                        : 'bg-[#14151b] border-white/5 text-zinc-600 cursor-not-allowed'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
-                      <span className="text-xs font-extrabold truncate">Server 2 (Backup)</span>
-                    </div>
-                    {modalServer === 'server2' && (
-                      <Check className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                    )}
+                    Server 2
                   </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* 2. AUDIO LANGUAGE FILTER PILLS (Works identically for both Server 1 and Server 2) */}
-            <div>
-              <label className="text-[11px] font-bold text-[#A1A1AA] uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                <span>2. Audio Language Filter</span>
-                <span className="text-[10px] text-sky-400 font-semibold">
-                  Applies to {modalServer === 'server2' ? 'Server 2' : 'Server 1'}
-                </span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {availableLanguages.map((lang) => {
-                  const isSelected = selectedLanguage.toLowerCase() === lang.toLowerCase();
+              {/* Subtle Divider */}
+              <div className="border-t border-white/10 my-3" />
+
+              {/* Quality Pills Row (e.g. 480P, 720P, 1080P) */}
+              <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar scrollbar-none">
+                {(isSeries
+                  ? seriesGlobalQualities
+                  : qualityOptions.length > 0
+                  ? qualityOptions.map((q) => q.id)
+                  : ['480p', '720p', '1080p']
+                ).map((qId) => {
+                  const isSelected = activeQualityId.toLowerCase() === qId.toLowerCase();
+                  const is1080 = qId.toLowerCase().includes('1080');
                   return (
                     <button
-                      key={lang}
+                      key={qId}
                       type="button"
-                      onClick={() => setSelectedLanguage(lang)}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
+                      onClick={() => setSelectedQuality(qId)}
+                      className={`min-w-[82px] py-1.5 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
                         isSelected
-                          ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-white shadow-sm shadow-sky-500/20'
-                          : 'bg-[#181820] border-[#27272A] text-[#A1A1AA] hover:text-white'
+                          ? is1080
+                            ? 'bg-[#423321] border-[#f59e0b]/60 text-[#fde68a] shadow-sm'
+                            : 'bg-[#2a2438] border-[#A855F7] text-white shadow-sm'
+                          : is1080
+                          ? 'bg-[#2b241d] border-transparent text-[#e5c185]/80 hover:text-[#fde68a]'
+                          : 'bg-[#252630] border-transparent text-zinc-300 hover:text-white'
                       }`}
                     >
-                      <span>{lang}</span>
-                      {isSelected && <Check className="h-3.5 w-3.5 text-[#38BDF8]" />}
+                      {is1080 && <Crown className="w-3.5 h-3.5 fill-[#f5bf60] text-[#f5bf60] shrink-0" />}
+                      <span>{qId.toUpperCase()}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* 3. QUALITY FILTER (Pill-Shaped Filter for Series, Detailed Quality Cards for Movie) */}
-            {isSeries ? (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-bold text-[#A1A1AA] uppercase tracking-wider">
-                    3. Target Quality Filter
-                  </label>
-                  <span className="text-[11px] text-emerald-400 font-extrabold">
-                    {totalEstimatedMb > 0
-                      ? `Selected Total: ${
-                          totalEstimatedMb >= 1000
-                            ? `${(totalEstimatedMb / 1024).toFixed(2)} GB`
-                            : `${totalEstimatedMb} MB`
-                        }`
-                      : 'Verified Metadata'}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {seriesGlobalQualities.map((qId) => {
-                    const isSelected = activeQualityId.toLowerCase() === qId.toLowerCase();
-                    return (
-                      <button
-                        key={qId}
-                        type="button"
-                        onClick={() => setSelectedQuality(qId)}
-                        className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-extrabold transition cursor-pointer border ${
+            {/* SCROLLABLE EPISODE / MOVIE ITEM LIST */}
+            <div className="flex-1 overflow-y-auto px-4 py-1 divide-y divide-white/[0.04] scrollbar-thin">
+              {isSeries ? (
+                episodeResolutionPlans.map((plan) => {
+                  const isSelected = selectedEpIndices.has(plan.epIndex);
+                  const epObj = currentEpisodes[plan.epIndex];
+                  const durationStr = formatEpDuration(epObj?.duration);
+                  const sizeStr =
+                    plan.sizeMb > 0
+                      ? plan.sizeMb >= 1000
+                        ? `${(plan.sizeMb / 1024).toFixed(2)}GB`
+                        : `${plan.sizeMb.toFixed(1)}MB`
+                      : '168.3MB';
+
+                  return (
+                    <button
+                      key={plan.epId || plan.epIndex}
+                      type="button"
+                      onClick={() => toggleEpisode(plan.epIndex)}
+                      className="w-full py-3.5 flex items-center gap-3.5 text-left transition cursor-pointer group hover:bg-white/[0.02]"
+                    >
+                      {/* Left Circular Radio / Checkbox */}
+                      <div
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                           isSelected
-                            ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white shadow-sm shadow-purple-500/20'
-                            : 'bg-[#181820] border-[#27272A] text-[#A1A1AA] hover:text-white hover:bg-[#20202A]'
+                            ? 'border-[#A855F7] bg-[#8B5CF6] text-white shadow-[0_0_8px_rgba(139,92,246,0.5)]'
+                            : 'border-zinc-500 bg-transparent group-hover:border-zinc-300'
                         }`}
                       >
-                        <span>{qId.toUpperCase()}</span>
-                        {isSelected && <Check className="h-3.5 w-3.5 text-purple-400" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              /* MOVIE QUALITY CARDS (Preserved as requested for Movies) */
-              <div>
-                <label className="text-xs font-bold text-[#A1A1AA] uppercase tracking-wider mb-2 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <span>
-                      Available Qualities ({modalServer === 'server2' ? 'Server 2' : 'Server 1'})
-                    </span>
-                    {isProbing && (
-                      <span className="text-[10px] text-sky-400 font-semibold flex items-center gap-1 animate-pulse">
-                        <Sparkles className="h-3 w-3" /> Reading sizes...
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-[11px] text-emerald-400 font-extrabold">
-                    {totalEstimatedMb > 0
-                      ? totalEstimatedMb >= 1000
-                        ? `${(totalEstimatedMb / 1024).toFixed(2)} GB`
-                        : `${totalEstimatedMb} MB`
-                      : 'HLS Ready'}
-                  </span>
-                </label>
+                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
 
-                {qualityOptions.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {qualityOptions.map((q) => {
-                      const isSelected = activeQualityId.toLowerCase() === q.id.toLowerCase();
-                      const rawMb = q.movieSizeMb;
-                      const sizeText =
-                        rawMb > 0
-                          ? rawMb >= 1000
-                            ? `${(rawMb / 1024).toFixed(2)} GB`
-                            : `${rawMb} MB`
-                          : isProbing
-                          ? 'Reading MB...'
-                          : 'Verified Link';
-
-                      return (
-                        <button
-                          key={`${modalServer}-${q.id}`}
-                          type="button"
-                          onClick={() => setSelectedQuality(q.id)}
-                          className={`flex flex-col p-2.5 rounded-2xl border text-left transition cursor-pointer relative ${
-                            isSelected
-                              ? 'bg-[#8B5CF6]/15 border-[#8B5CF6] text-white shadow-md shadow-purple-600/10'
-                              : 'bg-[#181820] border-[#27272A] text-[#A1A1AA] hover:bg-[#1E1E28]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-extrabold text-white">
-                                {q.id.toUpperCase()}
-                              </span>
-                              <span
-                                className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
-                                  modalServer === 'server2'
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                    : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                }`}
-                              >
-                                {modalServer === 'server2' ? 'S2' : 'S1'}
-                              </span>
-                            </div>
-                            {isSelected && <Check className="h-3.5 w-3.5 text-[#8B5CF6]" />}
-                          </div>
-                          <span className="text-[10px] text-[#A1A1AA] mt-0.5">{q.badge}</span>
-                          <span className="text-[11px] font-bold text-emerald-400 mt-1">
-                            {sizeText}
+                      {/* Episode Code + Size & Duration */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[15px] font-medium text-white tracking-tight">
+                            S{(selectedSeasonIdx + 1).toString().padStart(2, '0')} E
+                            {plan.epNumber.toString().padStart(2, '0')}
                           </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-2xl bg-[#16161C] border border-[#27272A] text-xs text-[#A1A1AA]">
-                    {isProbing
-                      ? 'Reading stream qualities...'
-                      : 'No separate qualities configured on this server.'}
-                  </div>
-                )}
-
-                {crossServerQualityOptions.length > 0 && (
-                  <div className="mt-2.5 pt-2.5 border-t border-[#27272A]/60">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300/90">
-                        Also Available on{' '}
-                        {modalServer === 'server1'
-                          ? 'Server 2 (Tap to Switch)'
-                          : 'Server 1 (Tap to Switch)'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {crossServerQualityOptions.map((q) => {
-                        const otherServer = modalServer === 'server1' ? 'server2' : 'server1';
-                        const rawMb = q.movieSizeMb;
-                        const sizeText =
-                          rawMb > 0
-                            ? rawMb >= 1000
-                              ? `${(rawMb / 1024).toFixed(2)} GB`
-                              : `${rawMb} MB`
-                            : 'Verified Link';
-
-                        return (
-                          <button
-                            key={`${otherServer}-${q.id}`}
-                            type="button"
-                            onClick={() => {
-                              setModalServer(otherServer);
-                              setSelectedQuality(q.id);
-                            }}
-                            className="flex flex-col p-2 rounded-xl border border-dashed border-amber-500/35 bg-[#16161E] hover:bg-amber-500/10 hover:border-amber-400 text-left transition cursor-pointer"
-                          >
-                            <div className="flex items-center justify-between w-full">
-                              <span className="text-xs font-extrabold text-white">
-                                {q.id.toUpperCase()}
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-black border border-amber-500/30">
-                                {otherServer === 'server2' ? 'Server 2' : 'Server 1'}
-                              </span>
-                            </div>
-                            <span className="text-[10px] font-bold text-emerald-400 mt-1">
-                              {sizeText}
+                          {plan.isFallbackQuality && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              {plan.resolvedQuality.toUpperCase()}
                             </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 4. MOVIE SINGLE CARD OR SERIES VERTICAL SCROLLABLE EPISODE LIST */}
-            {isMovie ? (
-              <div>
-                <label className="text-xs font-bold text-[#A1A1AA] uppercase tracking-wider mb-2 block">
-                  Movie Download Selection
-                </label>
-                <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#16161C] border border-purple-500/30 shadow-md">
-                  <img
-                    src={content.posterUrl || content.backdropUrl}
-                    alt={content.title}
-                    className="h-14 w-10 rounded-xl object-cover border border-white/10 shadow flex-shrink-0"
-                  />
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-xs sm:text-sm font-bold text-white truncate">
-                      {content.title}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                      <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-extrabold text-[10px] border border-sky-500/30">
-                        {selectedLanguage}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-extrabold text-[10px] border border-purple-500/30">
-                        {activeQualityId.toUpperCase()}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold text-[10px] border border-emerald-500/30">
-                        {modalServer === 'server2' ? 'Server 2' : 'Server 1'}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-xs font-extrabold text-emerald-400 flex-shrink-0">
-                    {totalEstimatedMb > 0
-                      ? totalEstimatedMb >= 1000
-                        ? `${(totalEstimatedMb / 1024).toFixed(2)} GB`
-                        : `${totalEstimatedMb} MB`
-                      : 'HLS Ready'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div>
-                {/* Season Selector Pills if multiple seasons exist */}
-                {seasonsData.length > 1 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 scrollbar-none">
-                    {seasonsData.map((season, sIdx) => (
-                      <button
-                        key={season.id || sIdx}
-                        type="button"
-                        onClick={() => handleSelectSeason(sIdx)}
-                        className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer border ${
-                          selectedSeasonIdx === sIdx
-                            ? 'bg-pink-500/20 border-pink-500 text-white'
-                            : 'bg-[#181820] border-[#27272A] text-[#A1A1AA] hover:text-white'
-                        }`}
-                      >
-                        {season.title || `Season ${season.seasonNumber || sIdx + 1}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] font-bold text-[#A1A1AA] uppercase tracking-wider">
-                      4. Select Episodes
-                    </label>
-                    <span className="text-[10px] text-purple-300 font-extrabold bg-purple-500/15 px-2.5 py-0.5 rounded-full border border-purple-500/30">
-                      {selectedEpIndices.size} / {currentEpisodes.length} Selected
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleSelectAll}
-                    className="flex items-center gap-1 text-[11px] font-bold text-[#38BDF8] hover:underline cursor-pointer"
-                  >
-                    {selectedEpIndices.size === currentEpisodes.length ? (
-                      <>
-                        <CheckSquare className="h-3.5 w-3.5" />
-                        <span>Unselect All</span>
-                      </>
-                    ) : (
-                      <>
-                        <Square className="h-3.5 w-3.5" />
-                        <span>Select All ({currentEpisodes.length})</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Vertical Scrollable Episode List with Live Applied Filter Badges */}
-                <div className="space-y-1.5 max-h-[240px] overflow-y-auto p-1.5 bg-[#0E0E12] rounded-2xl border border-[#27272A]/60">
-                  {episodeResolutionPlans.map((plan) => {
-                    const isSelected = selectedEpIndices.has(plan.epIndex);
-                    const isFallback = plan.isFallbackQuality;
-                    const isCrossAuto = plan.isCrossServerAuto && !plan.isFallbackQuality;
-
-                    return (
-                      <button
-                        key={plan.epId || plan.epIndex}
-                        type="button"
-                        onClick={() => toggleEpisode(plan.epIndex)}
-                        className={`w-full flex items-center justify-between gap-2.5 p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                          isSelected
-                            ? isFallback
-                              ? 'bg-red-950/25 border-red-500/60 text-white'
-                              : 'bg-purple-500/15 border-purple-500/60 text-white shadow-sm'
-                            : 'bg-[#16161C] border-[#27272A]/70 text-[#A1A1AA] hover:text-white hover:bg-[#1C1C24]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          {/* Checkbox Icon */}
-                          <div
-                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
-                              isSelected
-                                ? isFallback
-                                  ? 'bg-red-500 border-red-400 text-white'
-                                  : 'bg-[#8B5CF6] border-purple-400 text-white'
-                                : 'bg-[#121216] border-[#3F3F46] text-transparent'
-                            }`}
-                          >
-                            <Check className="h-3.5 w-3.5 stroke-[3]" />
-                          </div>
-
-                          {/* Episode Badge */}
-                          <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 font-mono text-[11px] font-extrabold text-white shrink-0">
-                            E{plan.epNumber}
-                          </span>
-
-                          {/* Episode Title & Applied Filter Badges */}
-                          <div className="flex flex-col min-w-0 flex-1">
-                            <span className="text-xs font-bold text-white truncate">
-                              {plan.epTitle}
-                            </span>
-                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                              {/* Resolved Quality Badge */}
-                              <span
-                                className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold border ${
-                                  isFallback
-                                    ? 'bg-red-500/25 text-red-300 border-red-500/40'
-                                    : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                                }`}
-                              >
-                                {isFallback
-                                  ? `${plan.resolvedQuality.toUpperCase()} (${plan.requestedQuality.toUpperCase()} N/A)`
-                                  : plan.resolvedQuality.toUpperCase()}
-                              </span>
-
-                              {/* Applied Language Badge */}
-                              <span className="px-1.5 py-0.2 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[9px] font-bold">
-                                {plan.language}
-                              </span>
-
-                              {/* Resolved Server Badge */}
-                              <span
-                                className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold border ${
-                                  isCrossAuto
-                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                    : plan.resolvedServer === 'server2'
-                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                                    : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                                }`}
-                              >
-                                {plan.resolvedServer === 'server2' ? 'S2' : 'S1'}
-                                {isCrossAuto ? ' Auto' : ''}
-                              </span>
-                            </div>
-                          </div>
+                          )}
                         </div>
+                        <div className="flex items-center gap-2 text-xs text-zinc-400 mt-0.5 font-normal">
+                          <span>{sizeStr}</span>
+                          <span className="text-zinc-600">|</span>
+                          <span>{durationStr}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                /* MOVIE MODE: List movie quality rows in the exact same clean style */
+                (qualityOptions.length > 0
+                  ? qualityOptions
+                  : [
+                      {
+                        id: activeQualityId || '1080p',
+                        label: (activeQualityId || '1080p').toUpperCase(),
+                        badge: 'Full HD',
+                        movieSizeMb: totalEstimatedMb || 850,
+                        epSizeMb: 0,
+                        bandwidth: 0,
+                        url: '',
+                        isLive: true,
+                        serverSource: modalServer,
+                      },
+                    ]
+                ).map((q) => {
+                  const isSelected = activeQualityId.toLowerCase() === q.id.toLowerCase();
+                  const sizeStr =
+                    q.movieSizeMb > 0
+                      ? q.movieSizeMb >= 1000
+                        ? `${(q.movieSizeMb / 1024).toFixed(2)}GB`
+                        : `${q.movieSizeMb.toFixed(1)}MB`
+                      : '920.5MB';
+                  const durationStr = formatEpDuration(content.duration);
 
-                        {/* Episode Verified Size in MB */}
-                        <div className="flex flex-col items-end shrink-0">
-                          <span className="text-[11px] font-extrabold text-emerald-400">
-                            {plan.sizeMb > 0
-                              ? plan.sizeMb >= 1000
-                                ? `${(plan.sizeMb / 1024).toFixed(2)} GB`
-                                : `${plan.sizeMb} MB`
-                              : 'Ready'}
+                  return (
+                    <button
+                      key={`${modalServer}-${q.id}`}
+                      type="button"
+                      onClick={() => setSelectedQuality(q.id)}
+                      className="w-full py-3.5 flex items-center gap-3.5 text-left transition cursor-pointer group hover:bg-white/[0.02]"
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                          isSelected
+                            ? 'border-[#A855F7] bg-[#8B5CF6] text-white shadow-[0_0_8px_rgba(139,92,246,0.5)]'
+                            : 'border-zinc-500 bg-transparent group-hover:border-zinc-300'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[15px] font-medium text-white truncate">
+                            {content.title} ({q.id.toUpperCase()})
                           </span>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                        <div className="flex items-center gap-2 text-xs text-zinc-400 mt-0.5 font-normal">
+                          <span>{sizeStr}</span>
+                          <span className="text-zinc-600">|</span>
+                          <span>{durationStr}</span>
+                          <span className="text-zinc-600">|</span>
+                          <span>{selectedLanguage}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 
-        {/* MODAL FOOTER ACTION */}
-        <div className="p-4 border-t border-[#27272A]/70 bg-[#16161C] flex items-center justify-between gap-3">
+        {/* STICKY BOTTOM BAR: "Select All" on Left + MaxPlay Purple Gradient "Download" Button on Right */}
+        <div className="px-4 py-3 border-t border-white/10 bg-[#101116] flex items-center justify-between gap-4 shrink-0">
           {showSummaryReview ? (
             <>
               <button
                 type="button"
                 onClick={() => setShowSummaryReview(false)}
-                className="flex items-center gap-1.5 rounded-2xl bg-[#27272A] px-5 py-3 text-xs sm:text-sm font-bold text-white hover:bg-[#323238] active:scale-95 transition cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-white/10 text-xs sm:text-sm font-bold text-white hover:bg-white/15 transition cursor-pointer"
               >
-                <X className="h-4 w-4" />
-                <span>Back / Edit</span>
+                Back
               </button>
-
               <button
                 type="button"
                 disabled={isSeries && selectedPlansSummary.sorted.length === 0}
                 onClick={handleStartDownload}
-                className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 px-6 py-3 text-xs sm:text-sm font-extrabold text-white shadow-lg shadow-teal-900/40 hover:opacity-95 active:scale-95 transition cursor-pointer disabled:opacity-50"
+                className="flex-1 max-w-[260px] py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-900/40 hover:opacity-95 active:scale-95 transition cursor-pointer disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
-                <span>
-                  Confirm & Download ({isMovie ? 'Movie' : `${selectedPlansSummary.sorted.length} Ep`})
-                </span>
+                <span>Download</span>
               </button>
             </>
           ) : (
             <>
-              <div className="flex flex-col">
-                <span className="text-[11px] font-bold text-[#A1A1AA] flex items-center gap-1">
-                  <HardDrive className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>
-                    {freeStorageGb !== null ? `Free Space: ${freeStorageGb} GB` : 'Offline Vault'}
+              {isSeries ? (
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2.5 py-1 text-left cursor-pointer group"
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                      selectedEpIndices.size === currentEpisodes.length && currentEpisodes.length > 0
+                        ? 'border-[#A855F7] bg-[#8B5CF6] text-white'
+                        : 'border-zinc-500 bg-transparent group-hover:border-zinc-300'
+                    }`}
+                  >
+                    {selectedEpIndices.size === currentEpisodes.length && currentEpisodes.length > 0 && (
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    )}
+                  </div>
+                  <span className="text-sm font-medium text-zinc-200 group-hover:text-white">
+                    Select All
                   </span>
-                </span>
-                <span className="text-xs font-extrabold text-white">
-                  {totalEstimatedMb > 0
-                    ? `Total: ${
-                        totalEstimatedMb >= 1000
-                          ? `${(totalEstimatedMb / 1024).toFixed(2)} GB`
-                          : `${totalEstimatedMb} MB`
-                      }`
-                    : isProbing
-                    ? 'Reading stream size...'
-                    : 'Verified HLS Stream'}
-                </span>
-              </div>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-zinc-300 font-medium">
+                  <div className="w-5 h-5 rounded-full border-2 border-[#A855F7] bg-[#8B5CF6] text-white flex items-center justify-center">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                  <span>{activeQualityId.toUpperCase()} Selected</span>
+                </div>
+              )}
 
               <button
                 type="button"
                 disabled={!isHlsMode || (isSeries && selectedEpIndices.size === 0)}
                 onClick={() => {
-                  if (isHlsMode) {
-                    if (isMovie) {
-                      handleStartDownload();
-                    } else {
-                      setShowSummaryReview(true);
-                    }
+                  if (!isHlsMode) return;
+                  if (isMovie) {
+                    handleStartDownload();
+                  } else if (selectedPlansSummary.fallbackCount > 0) {
+                    setShowSummaryReview(true);
+                  } else {
+                    handleStartDownload();
                   }
                 }}
-                className={`flex items-center gap-2 rounded-2xl px-6 py-3 text-xs sm:text-sm font-extrabold text-white shadow-lg transition ${
+                className={`flex-1 max-w-[240px] sm:max-w-[260px] py-2.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${
                   isHlsMode && (!isSeries || selectedEpIndices.size > 0)
-                    ? 'bg-gradient-to-r from-[#8B5CF6] via-[#A855F7] to-[#EC4899] shadow-purple-900/40 hover:opacity-95 active:scale-95 cursor-pointer'
+                    ? 'bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] text-white shadow-lg shadow-purple-900/40 hover:opacity-95 active:scale-95 cursor-pointer'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
                 }`}
               >
                 <Download className="h-4 w-4" />
                 <span>
-                  {isHlsMode
-                    ? isMovie
-                      ? 'Download Movie'
-                      : `Download (${selectedEpIndices.size} Ep${
-                          selectedEpIndices.size > 1 ? 's' : ''
-                        })`
-                    : 'Download Unavailable'}
+                  Download
+                  {isSeries && selectedEpIndices.size > 0 ? ` (${selectedEpIndices.size})` : ''}
                 </span>
               </button>
             </>

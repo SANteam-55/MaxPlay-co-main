@@ -155,56 +155,60 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
-          ref={modalRef}
-          onClick={(e) => e.stopPropagation()}
-          initial={{ scale: 0.95, opacity: 0, y: -10 }}
-          animate={{ 
-            scale: 1, 
-            opacity: 1, 
-            y: 0,
-            transition: { type: 'spring', damping: 25, stiffness: 350 }
-          }}
-          exit={{ 
-            scale: 0.95, 
-            opacity: 0, 
-            y: -5,
-            transition: { duration: 0.15 }
-          }}
-          className="absolute left-0 top-[calc(100%+8px)] z-[100] w-[min(320px,calc(100vw-2.5rem))] sm:w-[360px] bg-[#030712]/95 text-white rounded-xl border border-cyan-400/50 shadow-[0_10px_35px_rgba(6,182,212,0.4),0_0_50px_rgba(147,51,234,0.15),inset_0_0_15px_rgba(6,182,212,0.15)] max-h-[60vh] flex flex-col overflow-hidden select-none backdrop-blur-md origin-top-left"
-        >
-            {/* Holographic Top & Bottom Laser Edge Accents */}
-            <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_10px_#22d3ee]" />
-            <div className="absolute bottom-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent" />
+        <>
+          {/* Backdrop below the video player */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-[95] bg-black/60 backdrop-blur-[2px]"
+          />
 
-            {/* Corner Tech Brackets */}
-            <div className="absolute top-1 left-1 w-2 h-2 border-t border-l border-cyan-300 pointer-events-none" />
-            <div className="absolute top-1 right-1 w-2 h-2 border-t border-r border-cyan-300 pointer-events-none" />
-            <div className="absolute bottom-1 left-1 w-2 h-2 border-b border-l border-cyan-300 pointer-events-none" />
-            <div className="absolute bottom-1 right-1 w-2 h-2 border-b border-r border-cyan-300 pointer-events-none" />
-
-            {/* System Quest Header */}
-            <div className="px-3 pt-3 pb-2 border-b border-cyan-500/30 bg-gradient-to-b from-cyan-950/50 via-[#040c1d] to-transparent flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-400/60 flex items-center justify-center shadow-[0_0_8px_rgba(6,182,212,0.4)] text-cyan-300 shrink-0">
+          {/* Slide-up Panel anchored directly below the video player */}
+          <motion.div
+            ref={modalRef}
+            onClick={(e) => e.stopPropagation()}
+            initial={{ y: '100%', opacity: 0.5 }}
+            animate={{
+              y: 0,
+              opacity: 1,
+              transition: { type: 'spring', damping: 28, stiffness: 320 }
+            }}
+            exit={{
+              y: '100%',
+              opacity: 0,
+              transition: { duration: 0.2 }
+            }}
+            className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-[100] bg-[#101116] text-white rounded-t-2xl border-t border-white/10 shadow-[0_-12px_40px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden select-none"
+          >
+            {/* Top Drag Handle & Header */}
+            <div className="px-4 pt-3 pb-3 border-b border-white/10 bg-[#14151c] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-[#8B5CF6]/15 border border-[#8B5CF6]/40 flex items-center justify-center text-[#A855F7] shrink-0">
                   {type === 'language' ? (
-                    <Volume2 className="w-3 h-3" />
+                    <Volume2 className="w-4 h-4" />
                   ) : type === 'quality' ? (
-                    <Sparkles className="w-3 h-3" />
+                    <Sparkles className="w-4 h-4" />
                   ) : (
-                    <Layers className="w-3 h-3" />
+                    <Layers className="w-4 h-4" />
                   )}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1">
-                    <Zap className="w-2 h-2 text-cyan-400 animate-pulse" />
-                    <span className="text-[8px] tracking-[0.15em] uppercase font-mono font-black text-cyan-400">
-                      [ SYSTEM ]
-                    </span>
-                  </div>
-                  <h3 className="text-xs font-black tracking-wider text-white uppercase truncate drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-                    {type === 'language' ? 'AUDIO STREAM' : type === 'quality' ? 'VIDEO QUALITY' : 'SELECT DUNGEON'}
+                  <h3 className="text-sm sm:text-base font-bold text-white truncate">
+                    {type === 'language'
+                      ? 'Select Audio Language'
+                      : type === 'quality'
+                      ? 'Select Video Quality'
+                      : 'Select Season'}
                   </h3>
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    {contentTitle} • Uploaded by MaxPlay Admin
+                  </p>
                 </div>
               </div>
 
@@ -215,134 +219,126 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                   e.stopPropagation();
                   onClose();
                 }}
-                className="w-5 h-5 rounded-md bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition border border-white/10 cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition border border-white/10 cursor-pointer shrink-0"
                 title="Close"
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Scrollable System Options List */}
-            <div className="p-2 overflow-y-auto max-h-[35vh] space-y-1.5 scrollbar-thin scrollbar-thumb-cyan-500/30">
+            {/* Scrollable Options List */}
+            <div className="p-4 overflow-y-auto flex-1 space-y-2.5 scrollbar-thin scrollbar-thumb-white/10">
               {type === 'language' ? (
-                // Language Options List
                 (languages.length > 0 ? languages : [activeLanguage || 'Hindi']).map((lang, index) => {
                   const meta = getLanguageMeta(lang);
                   const isSelected = activeLanguage.toLowerCase() === lang.toLowerCase();
 
                   return (
-                    <motion.div
+                    <div
                       key={lang}
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
                       onClick={() => {
                         onSelectLanguage?.(lang);
                         onClose();
                       }}
-                      className={`relative group rounded-lg p-2 cursor-pointer transition-all duration-200 border flex items-center justify-between ${
+                      className={`group rounded-xl p-3.5 cursor-pointer transition-all duration-150 border flex items-center justify-between ${
                         isSelected
-                          ? 'bg-gradient-to-r from-cyan-950/90 via-[#091a38] to-purple-950/80 border-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.35)]'
-                          : 'bg-[#081226]/60 hover:bg-[#0c1c3d]/80 border-cyan-500/20 hover:border-cyan-400/50'
+                          ? 'bg-gradient-to-r from-[#8B5CF6]/20 via-[#6366F1]/15 to-transparent border-[#8B5CF6] shadow-[0_0_15px_rgba(139,92,246,0.2)]'
+                          : 'bg-[#181920] hover:bg-[#1e2029] border-white/10'
                       }`}
                     >
-                      {/* Left: Language Info */}
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className={`w-6 h-6 rounded flex items-center justify-center font-mono text-[9px] font-black shrink-0 transition-all ${
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
                             isSelected
-                              ? 'bg-cyan-400 text-black shadow-[0_0_8px_#22d3ee]'
-                              : 'bg-cyan-950/70 text-cyan-400 border border-cyan-500/40 group-hover:border-cyan-300'
+                              ? 'bg-gradient-to-br from-[#A855F7] to-[#6366F1] text-white shadow'
+                              : 'bg-white/5 text-zinc-400 border border-white/10'
                           }`}
                         >
                           0{index + 1}
                         </div>
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-[11px] sm:text-xs text-white tracking-wide truncate">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-white truncate">
                               {meta.name}
                             </span>
                             <span
-                              className={`text-[7px] font-mono px-1 py-0.5 rounded font-black tracking-wider ${
+                              className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
                                 isSelected
-                                  ? 'bg-cyan-400/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_4px_rgba(6,182,212,0.3)]'
-                                  : 'bg-white/5 text-white/50 border border-white/10'
+                                  ? 'bg-[#8B5CF6]/25 text-purple-200 border border-[#8B5CF6]/50'
+                                  : 'bg-white/5 text-zinc-400 border border-white/10'
                               }`}
                             >
                               {meta.badge}
                             </span>
                           </div>
+                          <p className="text-xs text-zinc-400 mt-0.5 truncate">{meta.description}</p>
                         </div>
                       </div>
 
-                      {/* Right: Selection Indicator */}
-                      <div className="shrink-0 ml-2">
-                        {isSelected ? (
-                          <div className="flex items-center gap-1 text-[9px] font-mono font-black text-cyan-300 bg-cyan-500/25 px-1.5 py-0.5 rounded border border-cyan-400/70 shadow-[0_0_6px_rgba(6,182,212,0.4)]">
-                            <Check className="w-2.5 h-2.5 text-cyan-300 stroke-[3]" />
-                            <span>EQUIPPED</span>
-                          </div>
-                        ) : (
-                          <div className="text-[9px] font-mono text-cyan-400/50 group-hover:text-cyan-300 px-1.5 py-0.5 rounded border border-transparent group-hover:border-cyan-500/40 transition-colors">
-                            [ SELECT ]
-                          </div>
-                        )}
+                      <div className="shrink-0 ml-3">
+                        <div
+                          className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                            isSelected
+                              ? 'border-[#A855F7] bg-[#A855F7] text-white'
+                              : 'border-zinc-500 bg-transparent'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
                       </div>
-                    </motion.div>
+                    </div>
                   );
                 })
               ) : type === 'quality' ? (
-                // Quality Options List
                 qualities.map((q, index) => {
                   const meta = getQualityMeta(q);
                   const isSelected = !meta.serverTag && (activeQuality || 'auto').toLowerCase() === meta.baseQ.toLowerCase();
 
                   return (
-                    <motion.div
+                    <div
                       key={q}
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
                       onClick={() => {
                         onSelectQuality?.(q);
                         onClose();
                       }}
-                      className={`relative group rounded-lg p-2 cursor-pointer transition-all duration-200 border flex items-center justify-between ${
+                      className={`group rounded-xl p-3.5 cursor-pointer transition-all duration-150 border flex items-center justify-between ${
                         isSelected
-                          ? 'bg-gradient-to-r from-emerald-950/90 via-[#08241d] to-cyan-950/80 border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                          ? 'bg-gradient-to-r from-[#8B5CF6]/20 via-[#6366F1]/15 to-transparent border-[#8B5CF6] shadow-[0_0_15px_rgba(139,92,246,0.2)]'
                           : meta.serverTag
-                          ? 'bg-[#141026]/75 hover:bg-[#1e1738]/90 border-amber-500/35 hover:border-amber-400/70'
-                          : 'bg-[#081226]/60 hover:bg-[#0c2420]/80 border-emerald-500/20 hover:border-emerald-400/50'
+                          ? 'bg-[#1a1625] hover:bg-[#221c30] border-amber-500/30'
+                          : 'bg-[#181920] hover:bg-[#1e2029] border-white/10'
                       }`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className={`w-6 h-6 rounded flex items-center justify-center font-mono text-[9px] font-black shrink-0 transition-all ${
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
                             isSelected
-                              ? 'bg-emerald-400 text-black shadow-[0_0_8px_#34d399]'
+                              ? 'bg-gradient-to-br from-[#A855F7] to-[#6366F1] text-white shadow'
                               : meta.serverTag
-                              ? 'bg-amber-500/25 text-amber-300 border border-amber-400/60 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
-                              : 'bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 group-hover:border-emerald-300'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                              : 'bg-white/5 text-zinc-400 border border-white/10'
                           }`}
                         >
                           {q.toLowerCase() === 'auto' ? 'AI' : `0${index}`}
                         </div>
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-[11px] sm:text-xs text-white tracking-wide truncate">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-white truncate">
                               {meta.name}
                             </span>
                             <span
-                              className={`text-[7px] font-mono px-1 py-0.5 rounded font-black tracking-wider ${
+                              className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
                                 isSelected
-                                  ? 'bg-emerald-400/25 text-emerald-200 border border-emerald-400/50 shadow-[0_0_4px_rgba(16,185,129,0.3)]'
-                                  : 'bg-white/5 text-white/50 border border-white/10'
+                                  ? 'bg-[#8B5CF6]/25 text-purple-200 border border-[#8B5CF6]/50'
+                                  : 'bg-white/5 text-zinc-400 border border-white/10'
                               }`}
                             >
                               {meta.badge}
                             </span>
                             {meta.serverLabel && (
-                              <span className="text-[8px] font-mono font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
                                 {meta.serverLabel}
                               </span>
                             )}
@@ -350,94 +346,78 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                         </div>
                       </div>
 
-                      <div className="shrink-0 ml-2">
-                        {isSelected ? (
-                          <div className="flex items-center gap-1 text-[9px] font-mono font-black text-emerald-300 bg-emerald-500/25 px-1.5 py-0.5 rounded border border-emerald-400/70 shadow-[0_0_6px_rgba(16,185,129,0.4)]">
-                            <Check className="w-2.5 h-2.5 text-emerald-300 stroke-[3]" />
-                            <span>ACTIVE</span>
-                          </div>
-                        ) : (
-                          <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border border-transparent transition-colors ${
-                            meta.serverTag
-                              ? 'text-amber-300/80 group-hover:text-amber-200 group-hover:border-amber-500/40'
-                              : 'text-emerald-400/50 group-hover:text-emerald-300 group-hover:border-emerald-500/40'
-                          }`}>
-                            [ SELECT ]
-                          </div>
-                        )}
+                      <div className="shrink-0 ml-3">
+                        <div
+                          className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                            isSelected
+                              ? 'border-[#A855F7] bg-[#A855F7] text-white'
+                              : 'border-zinc-500 bg-transparent'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
                       </div>
-                    </motion.div>
+                    </div>
                   );
                 })
               ) : (
-                // Season Options List
                 seasons.map((season) => {
                   const isSelected = selectedSeasonIndex === season.index;
 
                   return (
-                    <motion.div
+                    <div
                       key={season.index}
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
                       onClick={() => {
                         onSelectSeason?.(season.index);
                         onClose();
                       }}
-                      className={`relative group rounded-lg p-2 cursor-pointer transition-all duration-200 border flex items-center justify-between ${
+                      className={`group rounded-xl p-3.5 cursor-pointer transition-all duration-150 border flex items-center justify-between ${
                         isSelected
-                          ? 'bg-gradient-to-r from-purple-950/90 via-[#160f33] to-cyan-950/80 border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.35)]'
-                          : 'bg-[#081226]/60 hover:bg-[#151133]/80 border-purple-500/20 hover:border-purple-400/50'
+                          ? 'bg-gradient-to-r from-[#8B5CF6]/20 via-[#6366F1]/15 to-transparent border-[#8B5CF6] shadow-[0_0_15px_rgba(139,92,246,0.2)]'
+                          : 'bg-[#181920] hover:bg-[#1e2029] border-white/10'
                       }`}
                     >
-                      {/* Left: Season Info */}
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className={`w-6 h-6 rounded flex items-center justify-center font-mono text-[9px] font-black shrink-0 transition-all ${
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
                             isSelected
-                              ? 'bg-[#a855f7] text-white shadow-[0_0_8px_#a855f7]'
-                              : 'bg-purple-950/70 text-purple-400 border border-purple-500/40 group-hover:border-purple-300'
+                              ? 'bg-gradient-to-br from-[#A855F7] to-[#6366F1] text-white shadow'
+                              : 'bg-white/5 text-zinc-400 border border-white/10'
                           }`}
                         >
                           S{season.index + 1}
                         </div>
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-[11px] sm:text-xs text-white tracking-wide truncate">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-white truncate">
                               {season.title}
                             </span>
-                            <span
-                              className={`text-[7px] font-mono px-1 py-0.5 rounded font-black tracking-wider ${
-                                isSelected
-                                  ? 'bg-purple-400/25 text-purple-200 border border-purple-400/50 shadow-[0_0_4px_rgba(168,85,247,0.3)]'
-                                  : 'bg-white/5 text-white/50 border border-white/10'
-                              }`}
-                            >
-                              S{season.index + 1}
+                            <span className="text-[11px] text-zinc-400">
+                              ({season.episodesCount} Episodes)
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Right: Selection Indicator */}
-                      <div className="shrink-0 ml-2">
-                        {isSelected ? (
-                          <div className="flex items-center gap-1 text-[9px] font-mono font-black text-purple-300 bg-purple-500/25 px-1.5 py-0.5 rounded border border-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.4)]">
-                            <Check className="w-2.5 h-2.5 text-purple-300 stroke-[3]" />
-                            <span>ACTIVE</span>
-                          </div>
-                        ) : (
-                          <div className="text-[9px] font-mono text-purple-400/50 group-hover:text-purple-300 px-1.5 py-0.5 rounded border border-transparent group-hover:border-purple-500/40 transition-colors">
-                            [ ENTER ]
-                          </div>
-                        )}
+                      <div className="shrink-0 ml-3">
+                        <div
+                          className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                            isSelected
+                              ? 'border-[#A855F7] bg-[#A855F7] text-white'
+                              : 'border-zinc-500 bg-transparent'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
                       </div>
-                    </motion.div>
+                    </div>
                   );
                 })
               )}
             </div>
           </motion.div>
+        </>
       )}
     </AnimatePresence>
   );

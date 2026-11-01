@@ -423,16 +423,53 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
     showIndicator('volume');
   }, []);
 
-  // Apply volume changes directly to native HTML5 video element (when running in APK, hardware AudioManager handles 0-100% so keep HTML5 video at 1.0 unless muted)
+  // Web Audio API GainNode for true 100%-200% volume boost
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const connectedVideoElRef = useRef<HTMLVideoElement | null>(null);
+
+  // Apply volume changes directly to native HTML5 video element + Web Audio API GainNode when boosting > 100%
   useEffect(() => {
-    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+
     if (NativeBridgeService.isRunningInKotlinApp()) {
-      videoRef.current.volume = volume === 0 ? 0 : 1;
-      videoRef.current.muted = volume === 0;
+      video.volume = volume === 0 ? 0 : 1;
+      video.muted = volume === 0;
     } else {
       const clampedVolume = Math.min(1, Math.max(0, volume / 100));
-      videoRef.current.volume = clampedVolume;
-      videoRef.current.muted = volume === 0;
+      video.volume = clampedVolume;
+      video.muted = volume === 0;
+    }
+
+    // Apply real audio amplification up to 2.0x (200%) via Web Audio API GainNode
+    if (volume > 100 || gainNodeRef.current) {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          if (!audioCtxRef.current) {
+            audioCtxRef.current = new AudioCtx();
+          }
+          const ctx = audioCtxRef.current;
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+          if (connectedVideoElRef.current !== video) {
+            const source = ctx.createMediaElementSource(video);
+            const gain = ctx.createGain();
+            source.connect(gain);
+            gain.connect(ctx.destination);
+            gainNodeRef.current = gain;
+            connectedVideoElRef.current = video;
+          }
+          if (gainNodeRef.current) {
+            const boostMultiplier = volume > 100 ? volume / 100 : 1.0;
+            gainNodeRef.current.gain.setTargetAtTime(boostMultiplier, ctx.currentTime, 0.015);
+          }
+        }
+      } catch (err) {
+        // Fallback silently if stream does not allow Web Audio source connection
+      }
     }
   }, [volume]);
 
@@ -446,7 +483,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
     }
     capsuleMinimizeTimerRef.current = setTimeout(() => {
       setIsCapsuleMinimized(true);
-    }, 550);
+    }, 1000);
   }, []);
 
   const handleLongPressStart = useCallback(() => {
@@ -1944,8 +1981,8 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
         onLongPressMove={handleLongPressMove}
         onLongPressEnd={handleLongPressEnd}
         onDoubleTapCenter={() => {
+          setShowControls(false);
           handlePlayPause();
-          handleControlInteraction();
         }}
         onDoubleTapRewind={() => {
           const currentGlobal = timeOffset + currentTime;

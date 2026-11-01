@@ -170,7 +170,7 @@ export interface HomeRowConfig {
   id: string;
   title: string;
   order: number;
-  style?: 'default' | 'seasonal_card' | 'landscape_text' | 'classic_anime' | 'three_column' | 'three_column_grid' | 'network_grid';
+  style?: 'default' | 'seasonal_card' | 'landscape_text' | 'classic_anime' | 'three_column' | 'three_column_grid' | 'network_grid' | 'continue_watching' | 'top_10' | 'top10';
   mode?: 'tag' | 'custom_pick' | string;
   icon?: string;
   tagFilter?: string; // If set, filters content by this genre/tag automatically

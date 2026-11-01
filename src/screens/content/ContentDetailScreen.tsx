@@ -3066,13 +3066,13 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       >
         <div className="px-3.5 sm:px-5 pt-3.5 pb-6 z-10 w-full max-w-5xl mx-auto space-y-4">
         
-        {/* HERO CARD: Glassmorphic Container with Details, Synopsis, and Quick Resume */}
+        {/* HERO CARD: Glassmorphic Container with Details and Quick Resume */}
         <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#16161d]/90 to-[#0e0e13]/90 border border-white/10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
           {/* Subtle Ambient Radial Highlight */}
           <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
 
           {/* Title Header & Info Trigger */}
-          <div className="flex items-center justify-between gap-3 mb-2.5 relative z-10 min-w-0">
+          <div className="flex items-center justify-between gap-3 mb-2 relative z-10 min-w-0">
               <h1 
                 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-snug truncate flex-1 min-w-0"
                 title={content.title}
@@ -3084,7 +3084,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                   adManager.handleActionDockClick(!!user?.isPremium);
                   setShowDetails(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 text-[#c084fc] font-bold text-xs transition-all cursor-pointer shrink-0 border border-purple-500/20 shadow-sm shadow-purple-950/30 active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 hover:bg-white/15 text-[#c084fc] font-bold text-xs transition-all cursor-pointer shrink-0 border border-purple-500/20 shadow-sm shadow-purple-950/30 active:scale-95"
               >
                   <span className="text-[11px]">Info</span>
                   <Info className="w-3.5 h-3.5 text-[#c084fc]" />
@@ -3092,7 +3092,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           </div>
           
           {/* Dynamic Single-Line Metadata Ribbon */}
-          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs mb-3 font-medium relative z-10 overflow-x-auto whitespace-nowrap scrollbar-none py-1 select-none">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-medium relative z-10 overflow-x-auto whitespace-nowrap scrollbar-none py-0.5 select-none">
             {/* Content Type Badge */}
             <span className={`shrink-0 px-2.5 py-0.5 rounded-md font-extrabold uppercase text-[9px] sm:text-[10px] tracking-wider border shadow-sm ${
               isMovie 
@@ -3117,7 +3117,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
               </span>
             )}
 
-            {/* Year & Format */}
+            {/* Year & Country & Inline Genres */}
             {releaseYear && <span className="shrink-0 text-white/60 font-semibold">{releaseYear}</span>}
             {countryName && (
               <>
@@ -3125,36 +3125,30 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                 <span className="shrink-0 text-white/60 font-semibold">{countryName}</span>
               </>
             )}
-            <span className="shrink-0 text-white/20">•</span>
-            <span className="shrink-0 text-[#c084fc] font-bold">
-              {isMovie ? 'Feature Film' : `${seasonsCount} Season${seasonsCount > 1 ? 's' : ''}`}
-            </span>
+            {genreList.length > 0 ? (
+              <>
+                <span className="shrink-0 text-white/20">•</span>
+                <span className="shrink-0 text-white/60 font-semibold">
+                  {genreList.slice(0, 3).join(' • ')}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="shrink-0 text-white/20">•</span>
+                <span className="shrink-0 text-[#c084fc] font-bold">
+                  {isMovie ? 'Feature Film' : `${seasonsCount} Season${seasonsCount > 1 ? 's' : ''}`}
+                </span>
+              </>
+            )}
           </div>
 
-          {/* Expandable Synopsis Preview */}
-          {content.description && (
-            <div className="text-xs text-white/70 leading-relaxed relative z-10">
-              <p className={isSynopsisExpanded ? 'line-clamp-none' : 'line-clamp-2'}>
-                {content.description}
-              </p>
-              {content.description.length > 120 && (
-                <button 
-                  onClick={() => setIsSynopsisExpanded(!isSynopsisExpanded)}
-                  className="text-[#c084fc] hover:text-purple-300 font-bold text-[11px] mt-1 inline-block cursor-pointer transition-colors"
-                >
-                  {isSynopsisExpanded ? 'Show less' : 'More...'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* DYNAMIC STREAM-RESUME CAPSULE (Prime Video X-Ray Style) */}
+          {/* DYNAMIC STREAM-RESUME CAPSULE (Directly below metadata ribbon) */}
           {globalPlaybackPosition > 5 && (
             <div 
               onClick={() => {
                 scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className="mt-3.5 p-3.5 rounded-xl bg-gradient-to-r from-purple-950/70 via-[#1a1329] to-[#121219] border border-purple-500/30 hover:border-purple-400/60 transition-all duration-200 cursor-pointer group shadow-lg shadow-purple-950/40 relative z-10"
+              className="mt-3 p-3.5 rounded-xl bg-gradient-to-r from-purple-950/70 via-[#1a1329] to-[#121219] border border-purple-500/30 hover:border-purple-400/60 transition-all duration-200 cursor-pointer group shadow-lg shadow-purple-950/40 relative z-10"
             >
               <div className="flex items-center justify-between gap-3 mb-2">
                 <div className="flex items-center gap-3 truncate">
@@ -3193,7 +3187,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           )}
         </div>
 
-        {/* 4 FLOATING TACTILE ACTION DOCK (Neumorphic Frosted Glass) */}
+        {/* 4 SLEEK RECTANGULAR ACTION BUTTONS */}
         <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
           {/* 1. Add to list (Emerald Green Accent) */}
           <button 
@@ -3202,35 +3196,35 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
               adManager.handleActionDockClick(!!user?.isPremium);
               handleMyListToggle();
             }}
-            className={`flex flex-col items-center justify-center gap-1.5 h-[66px] rounded-2xl border transition-all duration-200 cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] border transition-all duration-200 cursor-pointer active:scale-95 ${
               isMyList 
                 ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-500/30' 
-                : 'bg-[#131318]/90 border-white/10 hover:border-emerald-500/40 hover:bg-[#181822] text-white/80 hover:text-emerald-300'
+                : 'bg-[#131318]/95 border-white/10 hover:border-emerald-500/40 hover:bg-[#181822] text-white/85 hover:text-emerald-300'
             }`}
           >
             {isMyList ? (
-              <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
             ) : (
-              <Plus className="w-4 h-4 text-emerald-400 stroke-[2.4]" />
+              <Plus className="w-3.5 h-3.5 text-emerald-400 stroke-[2.4]" />
             )}
             <span className="font-bold text-[9px] sm:text-[10px] tracking-tight truncate max-w-[90%]">
               {isMyList ? 'In My List' : 'My List'}
             </span>
           </button>
 
-          {/* 2. Share Button (Cyan Blue Accent) */}
+          {/* 2. Share Button */}
           <button 
             onClick={() => {
               adManager.handleActionDockClick(!!user?.isPremium);
               handleShare();
             }}
-            className="flex flex-col items-center justify-center gap-1.5 h-[66px] rounded-2xl bg-[#131318]/90 border border-white/10 hover:border-cyan-500/40 hover:bg-[#181822] active:scale-95 transition-all duration-200 cursor-pointer text-white/80 hover:text-cyan-300 shadow-md shadow-cyan-950/20"
+            className="flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] bg-[#131318]/95 border border-white/10 hover:border-cyan-500/40 hover:bg-[#181822] active:scale-95 transition-all duration-200 cursor-pointer text-white/85 hover:text-cyan-300"
           >
-            <Share2 className="w-4 h-4 stroke-[2.4] text-[#06b6d4]" />
+            <Share2 className="w-3.5 h-3.5 stroke-[2.4] text-[#06b6d4]" />
             <span className="font-bold text-[9px] sm:text-[10px] tracking-tight">Share</span>
           </button>
 
-          {/* 3. Download Button (Purple Accent) - Strictly for HLS Mode content */}
+          {/* 3. Download Button */}
           {(() => {
             const isContentHlsSupported = Boolean(
               content.isSmartHls ||
@@ -3254,15 +3248,15 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                   }
                   setShowDownloadModal(true);
                 }}
-                className={`flex flex-col items-center justify-center gap-1.5 h-[66px] rounded-2xl bg-[#131318]/90 border ${
+                className={`flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] bg-[#131318]/95 border ${
                   isContentHlsSupported
-                    ? 'border-white/10 hover:border-purple-500/40 hover:bg-[#181822] text-white/80 hover:text-purple-300'
+                    ? 'border-white/10 hover:border-purple-500/40 hover:bg-[#181822] text-white/85 hover:text-purple-300'
                     : 'border-white/5 bg-[#131318]/50 text-white/40 hover:border-white/10'
-                } active:scale-95 transition-all duration-200 cursor-pointer shadow-md shadow-purple-950/20`}
+                } active:scale-95 transition-all duration-200 cursor-pointer`}
                 title={isContentHlsSupported ? "Download for offline viewing (HLS Mode)" : "Download available only for HLS Mode"}
               >
                 <div className="relative">
-                  <Download className={`w-4 h-4 stroke-[2.4] ${isContentHlsSupported ? 'text-[#a855f7]' : 'text-zinc-500'}`} />
+                  <Download className={`w-3.5 h-3.5 stroke-[2.4] ${isContentHlsSupported ? 'text-[#a855f7]' : 'text-zinc-500'}`} />
                   {!isContentHlsSupported && (
                     <span className="absolute -top-1 -right-2 text-[7px] bg-zinc-800 text-zinc-400 px-0.5 rounded border border-zinc-700">
                       Old
@@ -3280,15 +3274,15 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
               adManager.handleActionDockClick(!!user?.isPremium);
               setIsServerModalOpen(true);
             }}
-            className={`flex flex-col items-center justify-center gap-1.5 h-[66px] rounded-2xl bg-[#131318]/90 border transition-all duration-200 cursor-pointer active:scale-95 shadow-md ${
+            className={`flex flex-col items-center justify-center gap-1 h-[50px] sm:h-[54px] rounded-[18px] bg-[#131318]/95 border transition-all duration-200 cursor-pointer active:scale-95 ${
               selectedServer === 'server2'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15 shadow-amber-950/20'
-                : 'border-white/10 hover:border-purple-500/40 hover:bg-[#181822] text-white/80 hover:text-purple-300 shadow-purple-950/20'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15'
+                : 'border-white/10 hover:border-purple-500/40 hover:bg-[#181822] text-white/85 hover:text-purple-300'
             }`}
             title="Switch Streaming Server (Server 1 / Server 2)"
           >
             <div className="relative flex items-center justify-center">
-              <Server className={`w-4 h-4 stroke-[2.4] ${selectedServer === 'server2' ? 'text-amber-400' : 'text-[#a855f7]'}`} />
+              <Server className={`w-3.5 h-3.5 stroke-[2.4] ${selectedServer === 'server2' ? 'text-amber-400' : 'text-[#a855f7]'}`} />
               <span className={`ml-1 px-1 py-0.2 rounded text-[8px] font-black uppercase tracking-tighter ${
                 selectedServer === 'server2'
                   ? 'bg-amber-500/25 text-amber-300 border border-amber-400/40'
@@ -3312,45 +3306,24 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           </div>
         )}
 
-        {/* OTT INTERACTIVE STUDIO GENRES STRIP */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none py-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          <span className="text-xs font-bold text-white/50 shrink-0">Genres:</span>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {genreList.map((genre, idx) => (
-              <span 
-                key={idx}
-                className="px-3 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/80 flex items-center gap-1.5 transition cursor-default shrink-0 shadow-sm"
-              >
-                <span>{getGenreEmoji(genre)}</span>
-                <span>{genre}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
         {/* NATIVE BANNER AD */}
         <NativeBanner />
 
-        {/* PLAYBACK & EPISODES CARD CONTAINER */}
-        <div className="relative z-30 bg-gradient-to-b from-[#131318] to-[#0c0c10] border border-white/10 rounded-2xl p-4 sm:p-5 shadow-2xl">
-            {/* Box Header */}
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
-                <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6] shadow-[0_0_8px_#8B5CF6]" />
-                    <span className="font-extrabold text-sm sm:text-base text-white">Playback & Episodes</span>
-                </div>
-                <div className="text-[11px] text-white/50 flex items-center gap-1">
-                    <span>By</span>
-                    <span className="font-bold text-white/90 truncate max-w-[120px]">{content.uploader?.name || 'MaxPlay Admin'}</span>
+        {/* PLAYBACK & RESOURCES SECTION (Unboxed, Directly on Background) */}
+        <div className="relative z-30 pt-1">
+            {/* Header Row */}
+            <div className="flex items-center justify-between mb-3">
+                <span className="font-bold text-base sm:text-lg text-white tracking-tight">Playback & Resources</span>
+                <div className="text-[11px] sm:text-xs text-zinc-400 flex items-center gap-1">
+                    <span>Uploaded by</span>
+                    <span className="font-medium text-zinc-300 truncate max-w-[135px]">{content.uploader?.name || 'MaxPlay Admin'}</span>
                 </div>
             </div>
 
-            {/* Single-Line Static Selector Row: Audio Language + Quality + Season */}
-            <div className="relative z-40 flex flex-col gap-2.5 mb-4">
-                <div className="relative flex items-center justify-between gap-2 w-full">
-                  {/* SINGLE-LINE HORIZONTAL SELECTOR BOXES (Never wraps onto a second line) */}
-                  <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar scrollbar-none py-0.5 flex-1 min-w-0">
-                    {/* 1. Dub / Language Trigger Button */}
+            {/* Single-Line Selector Row: 1. Language -> 2. Season (Series only) -> 3. Quality */}
+            <div className="relative z-40 flex flex-col gap-3 mb-3.5">
+                <div className="relative flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none py-0.5 w-full">
+                    {/* 1. Language Selector Box */}
                     <button
                       ref={languageTriggerRef}
                       data-selector-trigger="language"
@@ -3367,48 +3340,16 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                           return next;
                         });
                       }}
-                      className="relative shrink-0 inline-flex items-center gap-1.5 bg-[#121626] hover:bg-[#182038] active:scale-95 border border-cyan-500/30 hover:border-cyan-400/60 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white shadow-[0_0_12px_rgba(6,182,212,0.12)] transition-all cursor-pointer group"
-                      title="Change Audio Track"
+                      className="shrink-0 inline-flex items-center justify-between gap-2 bg-[#16171d] hover:bg-[#1e2028] active:scale-95 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-medium text-white/90 transition-all cursor-pointer"
+                      title="Change Audio Language"
                     >
-                      <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-md bg-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:bg-cyan-500/30 transition-colors shrink-0">
-                        <Volume2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#06b6d4]" />
-                      </div>
-                      <span className="font-mono text-cyan-300 font-extrabold tracking-wide truncate max-w-[78px] sm:max-w-[120px]">
-                        {activeLanguage || availableLanguages[0] || 'Audio'}
+                      <span className="truncate max-w-[110px]">
+                        {activeLanguage || availableLanguages[0] || 'Hindi Dub'}
                       </span>
-                      <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-400/60 group-hover:text-cyan-300 transition-transform shrink-0 ${isLanguageModalOpen ? 'rotate-180 text-cyan-300' : 'group-hover:translate-y-0.5'}`} />
+                      <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isLanguageModalOpen ? 'rotate-180 text-white' : ''}`} />
                     </button>
 
-                    {/* 2. Quality Selector Trigger Button */}
-                    <button
-                      ref={qualityTriggerRef}
-                      data-selector-trigger="quality"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsLanguageModalOpen(false);
-                        setIsSeasonModalOpen(false);
-                        setIsQualityModalOpen(prev => {
-                          const next = !prev;
-                          if (next) {
-                            adManager.handleSelectorClick(!!user?.isPremium);
-                          }
-                          return next;
-                        });
-                      }}
-                      className="relative shrink-0 inline-flex items-center gap-1.5 bg-[#0d1f1c] hover:bg-[#132d28] active:scale-95 border border-emerald-500/30 hover:border-emerald-400/60 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white shadow-[0_0_12px_rgba(16,185,129,0.12)] transition-all cursor-pointer group"
-                      title="Change Video Quality"
-                    >
-                      <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-md bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500/30 transition-colors shrink-0">
-                        <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#10b981]" />
-                      </div>
-                      <span className="font-mono text-emerald-300 font-extrabold tracking-wide uppercase truncate max-w-[64px] sm:max-w-[90px]">
-                        {activeQuality === 'auto' ? 'Auto' : activeQuality}
-                      </span>
-                      <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400/60 group-hover:text-emerald-300 transition-transform shrink-0 ${isQualityModalOpen ? 'rotate-180 text-emerald-300' : 'group-hover:translate-y-0.5'}`} />
-                    </button>
-
-                    {/* 3. Season Selector Trigger Button (Series/Anime only - stays on the exact same line) */}
+                    {/* 2. Season Selector Box (Series/Anime only - placed right after Language) */}
                     {!isMovie && (
                       <button
                         ref={seasonTriggerRef}
@@ -3426,223 +3367,228 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                             return next;
                           });
                         }}
-                        className="relative shrink-0 inline-flex items-center gap-1.5 bg-[#181329] hover:bg-[#231a3d] active:scale-95 border border-purple-500/30 hover:border-purple-400/60 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white shadow-[0_0_12px_rgba(168,85,247,0.12)] transition-all cursor-pointer group"
+                        className="shrink-0 inline-flex items-center justify-between gap-2 bg-[#16171d] hover:bg-[#1e2028] active:scale-95 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-medium text-white/90 transition-all cursor-pointer"
                         title="Change Season"
                       >
-                        <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-md bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:bg-purple-500/30 transition-colors shrink-0">
-                          <Layers className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-[#a855f7]" />
-                        </div>
-                        <span className="font-mono text-purple-300 font-extrabold tracking-wide truncate max-w-[82px] sm:max-w-[160px]">
-                          {content.seasonsData?.[selectedSeasonIndex]?.seasonTitle || content.seasonsData?.[selectedSeasonIndex]?.title || `Season ${selectedSeasonIndex + 1}`}
+                        <span className="truncate max-w-[120px]">
+                          {content.seasonsData?.[selectedSeasonIndex]?.seasonTitle ||
+                            content.seasonsData?.[selectedSeasonIndex]?.title ||
+                            `Season ${(selectedSeasonIndex + 1).toString().padStart(2, '0')}`}
                         </span>
-                        <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-400/60 group-hover:text-purple-300 transition-transform shrink-0 ${isSeasonModalOpen ? 'rotate-180 text-purple-300' : 'group-hover:translate-y-0.5'}`} />
+                        <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isSeasonModalOpen ? 'rotate-180 text-white' : ''}`} />
                       </button>
                     )}
-                  </div>
 
-                  {/* Dropdown Modals rendered OUTSIDE overflow-x-auto so they are never clipped vertically */}
-                  <SoloLevelingSelectorModal
-                    isOpen={isLanguageModalOpen}
-                    onClose={() => setIsLanguageModalOpen(false)}
-                    triggerRef={languageTriggerRef}
-                    type="language"
-                    contentTitle={content.title}
-                    languages={availableLanguages}
-                    activeLanguage={activeLanguage || availableLanguages[0] || ''}
-                    onSelectLanguage={handleUnifiedLanguageSelect}
-                  />
-
-                  <SoloLevelingSelectorModal
-                    isOpen={isQualityModalOpen}
-                    onClose={() => setIsQualityModalOpen(false)}
-                    triggerRef={qualityTriggerRef}
-                    type="quality"
-                    contentTitle={content.title}
-                    qualities={availableDetailQualities}
-                    activeQuality={activeQuality}
-                    onSelectQuality={(newQual) => {
-                      const s2Match = /\[S2\]/i.test(newQual);
-                      const s1Match = /\[S1\]/i.test(newQual);
-                      const cleanQ = newQual.replace(/\s*\[(S1|S2)\]/i, '').trim();
-                      saveProgressNow(playbackPosition, false, true);
-                      if (s2Match && selectedServer !== 'server2') {
-                        handleSelectServer('server2');
-                        setToastMessage(`Switched to Server 2 • ${cleanQ.toUpperCase()}`);
-                        setTimeout(() => setToastMessage(null), 2800);
-                      } else if (s1Match && selectedServer !== 'server1') {
-                        handleSelectServer('server1');
-                        setToastMessage(`Switched to Server 1 • ${cleanQ.toUpperCase()}`);
-                        setTimeout(() => setToastMessage(null), 2800);
-                      }
-                      setActiveQuality(cleanQ);
-                      try {
-                        localStorage.setItem('maxplay_preferred_quality', cleanQ);
-                        localStorage.setItem('maxplay_video_quality', cleanQ);
-                      } catch {}
-                    }}
-                  />
-
-                  {!isMovie && (
-                    <SoloLevelingSelectorModal
-                      isOpen={isSeasonModalOpen}
-                      onClose={() => setIsSeasonModalOpen(false)}
-                      triggerRef={seasonTriggerRef}
-                      type="season"
-                      contentTitle={content.title}
-                      seasons={seasonOptions}
-                      selectedSeasonIndex={selectedSeasonIndex}
-                      onSelectSeason={(sIdx) => {
-                        userExplicitlyChoseEpisodeRef.current = true;
-                        saveProgressNow(playbackPosition, false, true);
-                        setSelectedSeasonIndex(sIdx);
-                        
-                        // Determine the target episode for this selected season
-                        let targetEpIdx = 0;
-                        const targetSeasonEpisodes = content.seasonsData?.[sIdx]?.episodes || [];
-                        const maxValidEp = Math.max(0, targetSeasonEpisodes.length - 1);
-                        
-                        if (seasonEpisodeMap[sIdx] !== undefined) {
-                          targetEpIdx = Math.min(seasonEpisodeMap[sIdx], maxValidEp);
-                        } else {
-                          // Find highest watched episode in this season from partProgressMap
-                          let latestEpWatched = 0;
-                          let latestEpTime = 0;
-                          for (let epI = 0; epI < targetSeasonEpisodes.length; epI++) {
-                            for (let pI = 0; pI < 10; pI++) {
-                              const pData = partProgressMap[`s${sIdx}_e${epI}_p${pI}`];
-                              if (pData && (pData.time > 0 || (pData.updatedAt || 0) > latestEpTime)) {
-                                latestEpWatched = epI;
-                                latestEpTime = pData.updatedAt || pData.time;
-                              }
-                            }
+                    {/* 3. Quality Selector Box */}
+                    <button
+                      ref={qualityTriggerRef}
+                      data-selector-trigger="quality"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsLanguageModalOpen(false);
+                        setIsSeasonModalOpen(false);
+                        setIsQualityModalOpen(prev => {
+                          const next = !prev;
+                          if (next) {
+                            adManager.handleSelectorClick(!!user?.isPremium);
                           }
-                          targetEpIdx = latestEpWatched;
-                        }
-                        
-                        setSelectedEpisodeIndex(targetEpIdx);
-                        setSeasonEpisodeMap(prev => ({ ...prev, [sIdx]: targetEpIdx }));
-
-                        // Target part resolution for this episode
-                        let targetPart = 0;
-                        let targetKey = `s${sIdx}_e${targetEpIdx}_p0`;
-                        let targetSaved = partProgressMap[targetKey];
-                        for (let p = 1; p < 10; p++) {
-                          const pKey = `s${sIdx}_e${targetEpIdx}_p${p}`;
-                          const pSaved = partProgressMap[pKey];
-                          if (pSaved && (pSaved.time > 0 || (pSaved.updatedAt || 0) > (targetSaved?.updatedAt || 0))) {
-                            targetPart = p;
-                            targetKey = pKey;
-                            targetSaved = pSaved;
-                          }
-                        }
-
-                        setSelectedPartIndex(targetPart);
-                        setPlaybackPosition(targetSaved?.time || 0);
-                        if (targetSaved?.language) setActiveLanguage(targetSaved.language);
-                        if (targetSaved?.quality) setActiveQuality(targetSaved.quality);
+                          return next;
+                        });
                       }}
-                    />
-                  )}
-
-                  {/* View Switcher: List vs Grid Mode (For Series/Anime) */}
-                  {!isMovie && (
-                    <div className="hidden sm:flex items-center p-0.5 bg-[#1a1a22] border border-white/10 rounded-xl shrink-0">
-                      <button
-                        onClick={() => handleSetEpisodeViewMode('list')}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                          episodeViewMode === 'list' 
-                            ? 'bg-[#8B5CF6] text-white shadow-sm' 
-                            : 'text-white/50 hover:text-white/80'
-                        }`}
-                        title="List View"
-                      >
-                        <List className="w-3.5 h-3.5" />
-                        <span>List</span>
-                      </button>
-                      <button
-                        onClick={() => handleSetEpisodeViewMode('grid')}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                          episodeViewMode === 'grid' 
-                            ? 'bg-[#8B5CF6] text-white shadow-sm' 
-                            : 'text-white/50 hover:text-white/80'
-                        }`}
-                        title="Grid View"
-                      >
-                        <LayoutGrid className="w-3.5 h-3.5" />
-                        <span>Grid</span>
-                      </button>
-                    </div>
-                  )}
+                      className="shrink-0 inline-flex items-center justify-between gap-2 bg-[#16171d] hover:bg-[#1e2028] active:scale-95 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-medium text-white/90 uppercase transition-all cursor-pointer"
+                      title="Change Video Quality"
+                    >
+                      <span className="truncate max-w-[85px]">
+                        {activeQuality === 'auto' ? 'Auto' : activeQuality}
+                      </span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isQualityModalOpen ? 'rotate-180 text-white' : ''}`} />
+                    </button>
                 </div>
 
-                {/* Compact List/Grid row on mobile screens so the 3 selector boxes above always have full horizontal width */}
+                {/* Slide-up Selector Panels anchored directly below the video player */}
+                <SoloLevelingSelectorModal
+                  isOpen={isLanguageModalOpen}
+                  onClose={() => setIsLanguageModalOpen(false)}
+                  triggerRef={languageTriggerRef}
+                  type="language"
+                  contentTitle={content.title}
+                  languages={availableLanguages}
+                  activeLanguage={activeLanguage || availableLanguages[0] || ''}
+                  onSelectLanguage={handleUnifiedLanguageSelect}
+                />
+
+                <SoloLevelingSelectorModal
+                  isOpen={isQualityModalOpen}
+                  onClose={() => setIsQualityModalOpen(false)}
+                  triggerRef={qualityTriggerRef}
+                  type="quality"
+                  contentTitle={content.title}
+                  qualities={availableDetailQualities}
+                  activeQuality={activeQuality}
+                  onSelectQuality={(newQual) => {
+                    const s2Match = /\[S2\]/i.test(newQual);
+                    const s1Match = /\[S1\]/i.test(newQual);
+                    const cleanQ = newQual.replace(/\s*\[(S1|S2)\]/i, '').trim();
+                    saveProgressNow(playbackPosition, false, true);
+                    if (s2Match && selectedServer !== 'server2') {
+                      handleSelectServer('server2');
+                      setToastMessage(`Switched to Server 2 • ${cleanQ.toUpperCase()}`);
+                      setTimeout(() => setToastMessage(null), 2800);
+                    } else if (s1Match && selectedServer !== 'server1') {
+                      handleSelectServer('server1');
+                      setToastMessage(`Switched to Server 1 • ${cleanQ.toUpperCase()}`);
+                      setTimeout(() => setToastMessage(null), 2800);
+                    }
+                    setActiveQuality(cleanQ);
+                    try {
+                      localStorage.setItem('maxplay_preferred_quality', cleanQ);
+                      localStorage.setItem('maxplay_video_quality', cleanQ);
+                    } catch {}
+                  }}
+                />
+
                 {!isMovie && (
-                  <div className="flex sm:hidden items-center justify-end">
-                    <div className="flex items-center p-0.5 bg-[#1a1a22] border border-white/10 rounded-xl shrink-0">
-                      <button
-                        onClick={() => handleSetEpisodeViewMode('list')}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                          episodeViewMode === 'list' 
-                            ? 'bg-[#8B5CF6] text-white shadow-sm' 
-                            : 'text-white/50 hover:text-white/80'
-                        }`}
-                        title="List View"
-                      >
-                        <List className="w-3 h-3" />
-                        <span>List</span>
-                      </button>
-                      <button
-                        onClick={() => handleSetEpisodeViewMode('grid')}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                          episodeViewMode === 'grid' 
-                            ? 'bg-[#8B5CF6] text-white shadow-sm' 
-                            : 'text-white/50 hover:text-white/80'
-                        }`}
-                        title="Grid View"
-                      >
-                        <LayoutGrid className="w-3 h-3" />
-                        <span>Grid</span>
-                      </button>
-                    </div>
-                  </div>
+                  <SoloLevelingSelectorModal
+                    isOpen={isSeasonModalOpen}
+                    onClose={() => setIsSeasonModalOpen(false)}
+                    triggerRef={seasonTriggerRef}
+                    type="season"
+                    contentTitle={content.title}
+                    seasons={seasonOptions}
+                    selectedSeasonIndex={selectedSeasonIndex}
+                    onSelectSeason={(sIdx) => {
+                      userExplicitlyChoseEpisodeRef.current = true;
+                      saveProgressNow(playbackPosition, false, true);
+                      setSelectedSeasonIndex(sIdx);
+                      
+                      let targetEpIdx = 0;
+                      const targetSeasonEpisodes = content.seasonsData?.[sIdx]?.episodes || [];
+                      const maxValidEp = Math.max(0, targetSeasonEpisodes.length - 1);
+                      
+                      if (seasonEpisodeMap[sIdx] !== undefined) {
+                        targetEpIdx = Math.min(seasonEpisodeMap[sIdx], maxValidEp);
+                      } else {
+                        let latestEpWatched = 0;
+                        let latestEpTime = 0;
+                        for (let epI = 0; epI < targetSeasonEpisodes.length; epI++) {
+                          for (let pI = 0; pI < 10; pI++) {
+                            const pData = partProgressMap[`s${sIdx}_e${epI}_p${pI}`];
+                            if (pData && (pData.time > 0 || (pData.updatedAt || 0) > latestEpTime)) {
+                              latestEpWatched = epI;
+                              latestEpTime = pData.updatedAt || pData.time;
+                            }
+                          }
+                        }
+                        targetEpIdx = latestEpWatched;
+                      }
+                      
+                      setSelectedEpisodeIndex(targetEpIdx);
+                      setSeasonEpisodeMap(prev => ({ ...prev, [sIdx]: targetEpIdx }));
+
+                      let targetPart = 0;
+                      let targetKey = `s${sIdx}_e${targetEpIdx}_p0`;
+                      let targetSaved = partProgressMap[targetKey];
+                      for (let p = 1; p < 10; p++) {
+                        const pKey = `s${sIdx}_e${targetEpIdx}_p${p}`;
+                        const pSaved = partProgressMap[pKey];
+                        if (pSaved && (pSaved.time > 0 || (pSaved.updatedAt || 0) > (targetSaved?.updatedAt || 0))) {
+                          targetPart = p;
+                          targetKey = pKey;
+                          targetSaved = pSaved;
+                        }
+                      }
+
+                      setSelectedPartIndex(targetPart);
+                      setPlaybackPosition(targetSaved?.time || 0);
+                      if (targetSaved?.language) setActiveLanguage(targetSaved.language);
+                      if (targetSaved?.quality) setActiveQuality(targetSaved.quality);
+                    }}
+                  />
                 )}
             </div>
 
             {/* ========================================================================= */}
-            {/* MOVIE MODE: Minimalist Netflix-Style Play Banner (Invisible Multi-part Backend) */}
+            {/* MOVIE MODE: Minimalist Play Banner (Invisible Multi-part Backend) */}
             {/* ========================================================================= */}
             {isMovie ? (
-              <div className="space-y-3.5">
-                {/* FULL-WIDTH MOVIE TITLE BANNER */}
+              <div className="space-y-3">
                 <div 
                   onClick={() => {
                     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#0d3b37] via-[#104e49] to-[#0d3b37] border border-[#14b8a6]/40 shadow-lg shadow-teal-950/40 flex items-center justify-between cursor-pointer hover:border-[#2dd4bf]/70 hover:brightness-110 active:scale-[0.99] transition-all"
+                  className="w-full py-3 px-4 rounded-xl bg-[#0d2e2b] border border-[#14b8a6]/35 flex items-center justify-between cursor-pointer hover:border-[#2dd4bf]/70 active:scale-[0.99] transition-all"
                 >
                   <div className="flex items-center gap-2.5 truncate">
-                    <div className="w-7 h-7 rounded-full bg-[#14b8a6]/30 flex items-center justify-center shrink-0">
-                      <Play className="w-3.5 h-3.5 fill-[#2dd4bf] text-[#2dd4bf] ml-0.5" />
+                    <div className="w-6 h-6 rounded-full bg-[#14b8a6]/25 flex items-center justify-center shrink-0">
+                      <Play className="w-3 h-3 fill-[#2dd4bf] text-[#2dd4bf] ml-0.5" />
                     </div>
-                    <span className="text-[#2dd4bf] text-xs sm:text-sm font-black tracking-wide truncate">
+                    <span className="text-[#2dd4bf] text-xs sm:text-sm font-bold tracking-wide truncate">
                       {content.title} {displayLangTag ? `[${displayLangTag}]` : ''}
                     </span>
                   </div>
-                  <span className="text-[10px] uppercase font-black px-2.5 py-0.5 rounded bg-[#14b8a6]/20 text-[#2dd4bf] shrink-0 border border-[#14b8a6]/40">
-                    Playing Now
-                  </span>
+                  <div className="flex items-end gap-0.5 shrink-0 ml-2">
+                    <div className="w-0.5 h-2 bg-[#2dd4bf] rounded-full animate-pulse" />
+                    <div className="w-0.5 h-3 bg-[#2dd4bf] rounded-full" />
+                    <div className="w-0.5 h-1.5 bg-[#2dd4bf] rounded-full animate-pulse" />
+                  </div>
                 </div>
               </div>
             ) : (
               /* ========================================================================= */
-              /* SERIES / ANIME MODE: Episodes List/Grid Views (Invisible Multi-part Backend) */
+              /* SERIES / ANIME MODE: Horizontal Episode Strip (All | 01 | 02...) + Optional Expanded List */
               /* ========================================================================= */
-              <div className="space-y-4">
-                {/* EPISODES DISPLAY (LIST VIEW vs GRID VIEW) */}
-                <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xs font-bold text-white/80">
-                        Episodes ({totalEpisodes > 0 ? totalEpisodes : 1})
+              <div className="space-y-3">
+                {/* Horizontal Numbered Episode Row matching reference image (All, 01, 02, 03...) */}
+                <div className="flex items-center gap-2 overflow-x-auto py-0.5 no-scrollbar scrollbar-none" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSetEpisodeViewMode(episodeViewMode === 'list' ? 'grid' : 'list')}
+                    className={`shrink-0 px-3.5 h-10 sm:h-11 flex items-center justify-center rounded-lg text-xs font-semibold transition cursor-pointer border ${
+                      episodeViewMode === 'list'
+                        ? 'bg-[#1e2029] border-white/30 text-white'
+                        : 'bg-[#16171d] border-white/15 text-white/85 hover:text-white'
+                    }`}
+                    title="Toggle Full Episode List"
+                  >
+                    All
+                  </button>
+
+                  {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
+                    const isCurrent = selectedEpisodeIndex === idx;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          adManager.handleEpisodeClick(!!user?.isPremium);
+                          handleSelectEpisode(idx);
+                        }}
+                        className={`relative shrink-0 w-10 h-10 sm:w-11 sm:h-11 flex flex-col items-center justify-center rounded-lg text-xs font-bold transition cursor-pointer border ${
+                          isCurrent
+                            ? 'bg-[#0d332f] border-[#14b8a6]/50 text-[#2dd4bf]'
+                            : 'bg-[#16171d] text-white/80 border-white/10 hover:bg-[#1e2029] hover:text-white'
+                        }`}
+                      >
+                        <span>{(idx + 1).toString().padStart(2, '0')}</span>
+                        {isCurrent && (
+                          <div className="flex items-end gap-0.5 mt-0.5">
+                            <div className="w-0.5 h-1.5 bg-[#2dd4bf] rounded-full animate-pulse" />
+                            <div className="w-0.5 h-2.5 bg-[#2dd4bf] rounded-full" />
+                            <div className="w-0.5 h-1 bg-[#2dd4bf] rounded-full animate-pulse" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Expanded Detailed Episode List when "All" (list mode) is active */}
+                {episodeViewMode === 'list' && (
+                  <div className="space-y-2.5 pt-2 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-white/70">
+                        All Episodes ({totalEpisodes > 0 ? totalEpisodes : 1})
                       </h3>
                       <button
                         onClick={() => setIsAutoNextEnabled(!isAutoNextEnabled)}
@@ -3652,170 +3598,131 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                         <span>Auto Next</span>
                       </button>
                     </div>
+                    {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
+                      const isCurrent = selectedEpisodeIndex === idx;
+                      let epPercent = 0;
+                      let epDuration = 0;
+                      if (isCurrent) {
+                        epPercent = resumePercent;
+                        epDuration = globalTotalDuration;
+                      } else {
+                        const epPart0 = partProgressMap[`s${selectedSeasonIndex}_e${idx}_p0`];
+                        const epPart1 = partProgressMap[`s${selectedSeasonIndex}_e${idx}_p1`];
+                        const p0Dur = epPart0?.duration || (ep.duration ? ep.duration / 2 : 720);
+                        const p1Dur = epPart1?.duration || 0;
+                        epDuration = (p0Dur + p1Dur) || (ep.duration || content.duration || 1440);
+                        const p0Time = epPart0?.time || 0;
+                        const p1Time = epPart1?.time || 0;
+                        const epWatched = p1Time > 0 ? (p0Dur + p1Time) : p0Time;
+                        epPercent = (epWatched > 3 && epDuration > 0)
+                          ? Math.min(100, Math.max(2, Math.round((epWatched / epDuration) * 100)))
+                          : 0;
+                      }
 
-                    {/* 1. LIST VIEW MODE (High-End OTT Episode List) */}
-                    {episodeViewMode === 'list' ? (
-                      <div className="space-y-2.5">
-                        {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
-                          const isCurrent = selectedEpisodeIndex === idx;
-                          
-                          let epPercent = 0;
-                          let epDuration = 0;
-                          if (isCurrent) {
-                            epPercent = resumePercent;
-                            epDuration = globalTotalDuration;
-                          } else {
-                            // Sum multi-part progress for this inactive episode
-                            const epPart0 = partProgressMap[`s${selectedSeasonIndex}_e${idx}_p0`];
-                            const epPart1 = partProgressMap[`s${selectedSeasonIndex}_e${idx}_p1`];
-                            const p0Dur = epPart0?.duration || (ep.duration ? ep.duration / 2 : 720);
-                            const p1Dur = epPart1?.duration || 0;
-                            epDuration = (p0Dur + p1Dur) || (ep.duration || content.duration || 1440);
-                            const p0Time = epPart0?.time || 0;
-                            const p1Time = epPart1?.time || 0;
-                            const epWatched = p1Time > 0 ? (p0Dur + p1Time) : p0Time;
-                            epPercent = (epWatched > 3 && epDuration > 0)
-                              ? Math.min(100, Math.max(2, Math.round((epWatched / epDuration) * 100)))
-                              : 0;
-                          }
+                      const epTitle = ep.title || `Episode ${idx + 1}`;
+                      const epThumbnail = ep.thumbnailUrl || posterOrBackdrop;
 
-                          const epTitle = ep.title || `Episode ${idx + 1}`;
-                          const epThumbnail = ep.thumbnailUrl || posterOrBackdrop;
-
-                          return (
-                            <div
-                              key={idx}
-                              onClick={() => { adManager.handleEpisodeClick(!!user?.isPremium); handleSelectEpisode(idx); }}
-                              className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 ${
-                                isCurrent 
-                                  ? 'bg-gradient-to-r from-purple-950/60 to-[#161622] border-purple-400/60 shadow-lg shadow-purple-950/40 ring-1 ring-purple-500/40' 
-                                  : 'bg-[#15151c] border-white/10 hover:border-white/20 hover:bg-[#1a1a24]'
-                              }`}
-                            >
-                              {/* Left: Thumbnail with Duration & Play Overlay */}
-                              <div className="relative w-28 sm:w-36 aspect-video rounded-lg overflow-hidden shrink-0 bg-black/50 border border-white/10 group">
-                                <img 
-                                  src={epThumbnail} 
-                                  alt={epTitle}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  referrerPolicy="no-referrer"
-                                />
-                                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center ${isCurrent ? 'bg-purple-500 shadow-[0_0_8px_#a855f7]' : 'bg-black/60 group-hover:bg-white/20'}`}>
-                                    <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5" />
-                                  </div>
-                                </div>
-                                {/* Duration badge */}
-                                <div className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-white/90 text-[9px] font-bold">
-                                  {formatTime(epDuration)}
-                                </div>
-                                {/* Progress bottom bar */}
-                                {epPercent > 0 && (
-                                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
-                                    <div 
-                                      className={`h-full ${isCurrent ? 'bg-emerald-400' : 'bg-purple-400'}`} 
-                                      style={{ width: `${epPercent}%` }} 
-                                    />
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Middle: Title, Watched Status & Description */}
-                              <div className="flex-1 min-w-0 pr-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <h4 className={`text-xs sm:text-sm font-bold truncate ${isCurrent ? 'text-purple-300 font-extrabold' : 'text-white'}`}>
-                                    {(idx + 1).toString().padStart(2, '0')}. {epTitle}
-                                  </h4>
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] mb-1">
-                                  {epPercent > 0 ? (
-                                    <span className="text-emerald-400 font-extrabold text-[10px] flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                      {epPercent}% Watched
-                                    </span>
-                                  ) : (
-                                    <span className="text-white/40 text-[10px]">0% Watched</span>
-                                  )}
-                                  {isCurrent && (
-                                    <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-extrabold text-[9px] border border-purple-500/30">
-                                      Playing
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-[10px] sm:text-[11px] text-white/50 line-clamp-1">
-                                  {ep.description || content.description || 'Watch the next exciting installment of the adventure.'}
-                                </p>
-                              </div>
-
-                              {/* Right: Quick Options / Status */}
-                              <div className="shrink-0 text-white/40 hover:text-white p-1">
-                                <MoreVertical className="w-4 h-4" />
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => { adManager.handleEpisodeClick(!!user?.isPremium); handleSelectEpisode(idx); }}
+                          className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 ${
+                            isCurrent 
+                              ? 'bg-gradient-to-r from-purple-950/60 to-[#161622] border-purple-400/60 shadow-lg shadow-purple-950/40' 
+                              : 'bg-[#15151c] border-white/10 hover:border-white/20 hover:bg-[#1a1a24]'
+                          }`}
+                        >
+                          <div className="relative w-28 sm:w-36 aspect-video rounded-lg overflow-hidden shrink-0 bg-black/50 border border-white/10 group">
+                            <img 
+                              src={epThumbnail} 
+                              alt={epTitle}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center ${isCurrent ? 'bg-purple-500 shadow-[0_0_8px_#a855f7]' : 'bg-black/60 group-hover:bg-white/20'}`}>
+                                <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5" />
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      /* 2. GRID VIEW MODE (Horizontal Scrollable Shelf) */
-                      <div className="flex items-center gap-2 overflow-x-auto py-1.5 px-0.5 no-scrollbar scrollbar-none" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                        {(activeSeasonEpisodes.length > 0 ? activeSeasonEpisodes : [{ id: '1', title: 'Episode 1' }]).map((ep, idx) => {
-                            const isCurrent = selectedEpisodeIndex === idx;
-                            return (
-                                <button
-                                    key={idx}
-                                    onClick={() => { adManager.handleEpisodeClick(!!user?.isPremium); handleSelectEpisode(idx); }}
-                                    className={`relative shrink-0 w-11 h-11 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl text-xs sm:text-sm font-black transition cursor-pointer border ${
-                                      isCurrent 
-                                        ? 'bg-[#8B5CF6] border-[#8B5CF6] text-white shadow-lg shadow-purple-500/40 ring-1 ring-purple-400' 
-                                        : 'bg-[#18181d] text-white/75 border-white/10 hover:bg-white/5 hover:text-white'
-                                    }`}
-                                >
-                                    <span>{(idx + 1).toString().padStart(2, '0')}</span>
-                                    {isCurrent && (
-                                      <div className="flex items-center gap-0.5 mt-0.5">
-                                        <div className="w-0.5 h-1.5 bg-white rounded-full animate-pulse" />
-                                        <div className="w-0.5 h-2 bg-white rounded-full" />
-                                        <div className="w-0.5 h-1 bg-white rounded-full animate-pulse" />
-                                      </div>
-                                    )}
-                                </button>
-                            );
-                        })}
-                      </div>
-                    )}
-                </div>
+                            <div className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-white/90 text-[9px] font-bold">
+                              {formatTime(epDuration)}
+                            </div>
+                            {epPercent > 0 && (
+                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
+                                <div 
+                                  className={`h-full ${isCurrent ? 'bg-emerald-400' : 'bg-purple-400'}`} 
+                                  style={{ width: `${epPercent}%` }} 
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0 pr-1">
+                            <h4 className={`text-xs sm:text-sm font-bold truncate mb-1 ${isCurrent ? 'text-purple-300 font-extrabold' : 'text-white'}`}>
+                              {(idx + 1).toString().padStart(2, '0')}. {epTitle}
+                            </h4>
+                            <div className="flex items-center gap-2 text-[11px] mb-1">
+                              {epPercent > 0 ? (
+                                <span className="text-emerald-400 font-extrabold text-[10px] flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                  {epPercent}% Watched
+                                </span>
+                              ) : (
+                                <span className="text-white/40 text-[10px]">0% Watched</span>
+                              )}
+                              {isCurrent && (
+                                <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-extrabold text-[9px] border border-purple-500/30">
+                                  Playing
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] sm:text-[11px] text-white/50 line-clamp-1">
+                              {ep.description || content.description || 'Watch the next exciting installment of the adventure.'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
         </div>
 
-        {/* 3. Navigation Tabs: Segmented Apple/Crunchyroll-style pills */}
-        <div ref={commentsSectionRef} className="mb-4">
-          <div className="flex items-center p-1 bg-[#121216] border border-white/10 rounded-xl max-w-sm">
+        {/* Navigation Tabs: Clean Underline Tabs ("For you" & "Comments") matching reference image */}
+        <div ref={commentsSectionRef} className="pt-2 mb-3">
+          <div className="flex items-center gap-6 border-b border-white/5">
               <button 
                   onClick={() => { adManager.handleSectionToggleClick(!!user?.isPremium); setActiveTab('forYou'); }}
-                  className={`flex-1 py-1.5 rounded-lg font-bold text-xs sm:text-sm transition cursor-pointer text-center ${
+                  className={`relative pb-2.5 font-bold text-sm sm:text-base transition cursor-pointer ${
                     activeTab === 'forYou' 
-                      ? 'bg-[#8B5CF6] text-white shadow-md shadow-purple-950/50' 
-                      : 'text-white/50 hover:text-white/80'
+                      ? 'text-white' 
+                      : 'text-zinc-400 hover:text-white/80'
                   }`}
               >
-                  <span>More Like This</span>
+                  <span>For you</span>
+                  {activeTab === 'forYou' && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-[3px] bg-white rounded-full" />
+                  )}
               </button>
               
               <button 
                   onClick={() => { adManager.handleSectionToggleClick(!!user?.isPremium); setActiveTab('comments'); }}
-                  className={`flex-1 py-1.5 rounded-lg font-bold text-xs sm:text-sm transition cursor-pointer text-center ${
+                  className={`relative pb-2.5 font-bold text-sm sm:text-base transition cursor-pointer ${
                     activeTab === 'comments' 
-                      ? 'bg-[#8B5CF6] text-white shadow-md shadow-purple-950/50' 
-                      : 'text-white/50 hover:text-white/80'
+                      ? 'text-white' 
+                      : 'text-zinc-400 hover:text-white/80'
                   }`}
               >
-                  <span>Comments ({comments.length})</span>
+                  <span>Comments({comments.length > 99 ? '99+' : comments.length})</span>
+                  {activeTab === 'comments' && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-[3px] bg-white rounded-full" />
+                  )}
               </button>
           </div>
         </div>
 
-        {/* TAB 1: FOR YOU / MORE LIKE THIS - EXACT MATCH TO HOMESCREEN 3-COLUMN CARDS */}
+        {/* TAB 1: FOR YOU - NEW 9-CARD DESIGN (Clean Poster + Top-Right Language Tag + Dark Footer Strip) */}
         {activeTab === 'forYou' && (
             <div className="animate-in fade-in duration-300">
                 <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5 pt-1">
@@ -3826,8 +3733,10 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                           item.backdropUrl ||
                           'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=300';
                         const displayTitle = (item as any).customTitle || item.title;
-                        const rating = item.rating || 8.5;
-                        const yearOrGenre = item.year || item.genres?.[0] || item.category || 'HD';
+                        const langBadge =
+                          item.language ||
+                          (Array.isArray((item as any).audioLanguages) && (item as any).audioLanguages[0]) ||
+                          '';
 
                         return (
                           <div 
@@ -3838,39 +3747,28 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                                 }
                                 scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                               }}
-                              className="group relative flex flex-col cursor-pointer transition-transform duration-200 active:scale-95 select-none"
+                              className="group relative flex flex-col cursor-pointer transition-transform duration-200 active:scale-95 select-none rounded-lg overflow-hidden bg-[#161922] border border-white/5 shadow-md shadow-black/40"
                           >
-                             {/* Standard Home-style Aspect [2/3] Poster Box */}
-                             <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-[#1C1C1E] border border-white/10 shadow-md shadow-black/40">
+                             {/* Clean Vertical Poster Box */}
+                             <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#1C1C1E]">
                                <img 
                                   src={displayPoster} 
                                   alt={displayTitle} 
                                   className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" 
                                   loading="lazy"
                                />
-                               
-                               {/* Gradient Shadow Overlay */}
-                               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
 
-                               {/* Top Left Rating Badge */}
-                               <div className="absolute top-1.5 left-1.5 flex items-center gap-1 pointer-events-none">
-                                  <div className="flex items-center gap-0.5 rounded-md bg-black/70 backdrop-blur-xs px-1.5 py-0.5 text-[10px] font-bold text-white border border-white/10 shadow">
-                                    <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
-                                    <span>{Number(rating).toFixed(1)}</span>
-                                  </div>
-                               </div>
-
-                               {/* Bottom Type / Year pill inside poster */}
-                               <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none">
-                                  <span className="text-[10px] font-medium text-white/90 drop-shadow truncate">
-                                    {yearOrGenre}
-                                  </span>
-                               </div>
+                               {/* Top Right Language Badge */}
+                               {langBadge && (
+                                 <div className="absolute top-1.5 right-1.5 rounded bg-black/75 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-[2px] pointer-events-none">
+                                   {langBadge}
+                                 </div>
+                               )}
                              </div>
 
-                             {/* Title & Metadata below poster */}
-                             <div className="mt-1.5 px-0.5 text-left">
-                               <h3 className="truncate text-xs sm:text-sm font-semibold text-white group-hover:text-[#A78BFA] transition-colors leading-tight" title={displayTitle}>
+                             {/* Attached Dark Footer Strip with Single-Line Truncated Title */}
+                             <div className="bg-[#161922] px-2 py-2 text-left">
+                               <h3 className="truncate text-[12px] sm:text-[13px] font-medium text-[#E4E4E7] group-hover:text-white transition-colors leading-tight" title={displayTitle}>
                                  {displayTitle}
                                </h3>
                              </div>
@@ -3958,18 +3856,18 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
       </div>
 
-      {/* Details Info Bottom Sheet Modal (inside mobile phone frame) */}
+      {/* Details Info Slide-Up Sheet Anchored Directly Below Video Player */}
       {showDetails && content && (
         <div 
-          className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end justify-center p-0 animate-in fade-in duration-200"
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-0 animate-in fade-in duration-200"
           onClick={() => setShowDetails(false)}
         >
           <div 
-            className="bg-[#18181c] border-t border-white/15 w-full rounded-t-3xl p-5 max-h-[85%] overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
+            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-white/10 sticky top-0 bg-[#18181c] z-10">
+            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-white/10 sticky top-0 bg-[#121318] z-10">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <Info className="w-4.5 h-4.5 text-purple-400" />
                 <span>Content Details</span>
@@ -3977,7 +3875,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
               <button 
                 type="button"
                 onClick={() => setShowDetails(false)}
-                className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -4047,17 +3945,17 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         </div>
       )}
 
-      {/* Modern Report Modal with Selectable Categories (inside mobile phone frame) */}
+      {/* Modern Report Modal with Selectable Categories */}
       {reportModalOpen && reportingTarget && (
         <div 
-          className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end justify-center p-0 animate-in fade-in duration-200"
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/85 backdrop-blur-md flex items-end justify-center p-0 animate-in fade-in duration-200"
           onClick={() => {
             setReportModalOpen(false);
             setReportingTarget(null);
           }}
         >
           <div 
-            className="bg-[#18181F] border-t border-white/15 w-full rounded-t-3xl p-4 sm:p-5 max-h-[88%] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200 shadow-2xl flex flex-col"
+            className="bg-[#18181F] border-t border-white/15 w-full h-full rounded-t-2xl p-4 sm:p-5 overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-4 duration-200 shadow-2xl flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -4177,18 +4075,18 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         </div>
       )}
 
-      {/* Server Selection Bottom Sheet Modal (Server 1 / Server 2 — Provider Names Hidden) */}
+      {/* Server Selection Slide-Up Sheet Anchored Directly Below Video Player */}
       {isServerModalOpen && content && (
         <div
-          className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end justify-center p-0 animate-in fade-in duration-200"
+          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-0 animate-in fade-in duration-200"
           onClick={() => setIsServerModalOpen(false)}
         >
           <div
-            className="bg-[#18181c] border-t border-white/15 w-full rounded-t-3xl p-5 max-h-[85%] overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
+            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-white/10 sticky top-0 bg-[#18181c] z-10">
+            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-white/10 sticky top-0 bg-[#121318] z-10">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
                   <Server className="w-4 h-4 text-amber-400" />
@@ -4205,7 +4103,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setIsServerModalOpen(false)}
-                className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
