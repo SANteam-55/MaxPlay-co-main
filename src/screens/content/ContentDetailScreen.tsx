@@ -2938,15 +2938,12 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
   }, [content, playbackPosition, saveProgressNow]);
 
   const handleBackWithMiniplayer = useCallback(() => {
-    saveProgressOnLeave();
-    const autoMiniEnabled = localStorage.getItem('maxplay_auto_miniplayer') !== 'false';
-    const activeState = (window as any).__maxplayActivePlaybackState;
-    if (autoMiniEnabled && activeState?.isPlaying && typeof (window as any).__enterMaxPlayPipOnBack === 'function') {
-      const enteredPip = (window as any).__enterMaxPlayPipOnBack();
-      if (enteredPip) {
-        return;
-      }
-    }
+    try {
+      saveProgressOnLeave();
+    } catch {}
+    try {
+      (window as any).__maxplayActivePlaybackState = null;
+    } catch {}
     onBack();
   }, [saveProgressOnLeave, onBack]);
 

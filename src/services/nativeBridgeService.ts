@@ -190,6 +190,13 @@ export class NativeBridgeService {
   }
 
   /**
+   * Alias for isRunningInKotlinApp() used by player PiP / native checks.
+   */
+  public static isNativeAndroid(): boolean {
+    return this.isRunningInKotlinApp();
+  }
+
+  /**
    * Locks or unlocks native Android hardware landscape orientation when entering/exiting fullscreen.
    */
   public static setNativeLandscapeOrientation(locked: boolean): boolean {

@@ -715,6 +715,8 @@ object MaxPlayOfflineVault {
      * Generates and serves a real video frame thumbnail for any local video (`https://maxplay.local/device-video-thumb/{id}`)
      * with disk caching so subsequent opens render in 0ms.
      */
+    private val thumbDecodeLock = Any()
+
     fun interceptDeviceVideoThumbRequest(
         context: Context,
         url: String
@@ -756,29 +758,42 @@ object MaxPlayOfflineVault {
 
             var bitmap: android.graphics.Bitmap? = null
 
-            // 1. Fast Android 10+ (API 29+) MediaStore loadThumbnail
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                try {
-                    bitmap = context.contentResolver.loadThumbnail(
-                        contentUri,
-                        android.util.Size(640, 360),
-                        null
+            synchronized(thumbDecodeLock) {
+                if (cachedThumb.exists() && cachedThumb.length() > 256L) {
+                    return WebResourceResponse(
+                        "image/jpeg",
+                        null,
+                        200,
+                        "OK",
+                        corsHeaders,
+                        FileInputStream(cachedThumb)
                     )
-                } catch (_: Exception) {}
-            }
+                }
 
-            // 2. Fallback: MediaMetadataRetriever real frame extraction (preserves true video aspect ratio)
-            if (bitmap == null) {
-                val retriever = android.media.MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(context, contentUri)
-                    bitmap = retriever.getFrameAtTime(
-                        1_500_000L,
-                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                    ) ?: retriever.getFrameAtTime()
-                } catch (_: Exception) {
-                } finally {
-                    try { retriever.release() } catch (_: Exception) {}
+                // 1. Fast Android 10+ (API 29+) MediaStore loadThumbnail
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    try {
+                        bitmap = context.contentResolver.loadThumbnail(
+                            contentUri,
+                            android.util.Size(640, 360),
+                            null
+                        )
+                    } catch (_: Exception) {}
+                }
+
+                // 2. Fallback: MediaMetadataRetriever real frame extraction (serialized to prevent MediaCodec exhaustion)
+                if (bitmap == null) {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, contentUri)
+                        bitmap = retriever.getFrameAtTime(
+                            1_500_000L,
+                            android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        ) ?: retriever.getFrameAtTime()
+                    } catch (_: Exception) {
+                    } finally {
+                        try { retriever.release() } catch (_: Exception) {}
+                    }
                 }
             }
 
@@ -885,14 +900,32 @@ object MaxPlayOfflineVault {
 
                 val contentLength = (clampedEnd - clampedStart + 1L).coerceAtLeast(0L)
 
+                var seekSucceeded = false
                 try {
-                    fis.channel.position(clampedStart)
-                } catch (_: Exception) {
+                    android.system.Os.lseek(pfd.fileDescriptor, clampedStart, android.system.OsConstants.SEEK_SET)
+                    seekSucceeded = true
+                } catch (_: Exception) {}
+
+                if (!seekSucceeded) {
+                    try {
+                        fis.channel.position(clampedStart)
+                        seekSucceeded = true
+                    } catch (_: Exception) {}
+                }
+
+                if (!seekSucceeded && clampedStart > 0L) {
                     var skipped = 0L
+                    val discardBuf = ByteArray(16384)
                     while (skipped < clampedStart) {
                         val s = fis.skip(clampedStart - skipped)
-                        if (s <= 0L) break
-                        skipped += s
+                        if (s > 0L) {
+                            skipped += s
+                        } else {
+                            val toRead = minOf(discardBuf.size.toLong(), clampedStart - skipped).toInt()
+                            val r = fis.read(discardBuf, 0, toRead)
+                            if (r <= 0) break
+                            skipped += r.toLong()
+                        }
                     }
                 }
 

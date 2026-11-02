@@ -74,6 +74,7 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = (pr
 };
 
 const DownloadSelectionModalInner: React.FC<DownloadSelectionModalProps> = ({
+  visible = true,
   content,
   initialSeasonIndex = 0,
   initialEpisodeIndex = 0,

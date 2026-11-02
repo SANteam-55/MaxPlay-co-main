@@ -4641,6 +4641,15 @@
       }
     }
     window.db = db;
+    window.doc = doc;
+    window.getDoc = getDoc;
+    window.setDoc = setDoc;
+    window.onSnapshot = onSnapshot;
+    window.collection = collection;
+    window.getDocs = getDocs;
+    window.updateDoc = updateDoc;
+    window.deleteDoc = deleteDoc;
+    window.addDoc = addDoc;
     const auth = getAuth(app);
 
     // Auto-load custom logo globally on start
@@ -20724,41 +20733,62 @@ docs.forEach(docItem => {
     // ============================================================================
     window.presetAvatarGroups = [
       {
-        id: 'grp_solo_leveling',
-        title: 'Solo Leveling',
+        id: 'grp-1',
+        title: 'Anime & Movie Legends',
+        order: 1,
         avatars: [
-          { name: 'Sung Jinwoo', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=Jinwoo&backgroundColor=2e1065' },
-          { name: 'Cha Hae-In', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=ChaHaeIn&backgroundColor=4c1d95' },
-          { name: 'Igris Shadow', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=Igris&backgroundColor=1e1b4b' },
-          { name: 'Beru King', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=Beru&backgroundColor=31104b' }
-        ]
-      },
-      {
-        id: 'grp_jujutsu_kaisen',
-        title: 'Jujutsu Kaisen',
-        avatars: [
-          { name: 'Satoru Gojo', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=Gojo&backgroundColor=0c4a6e' },
-          { name: 'Yuji Itadori', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=Yuji&backgroundColor=7c2d12' },
-          { name: 'Megumi Fushiguro', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=Megumi&backgroundColor=1e293b' }
+          { id: 'av-1', name: 'Gojo Satoru', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80' },
+          { id: 'av-2', name: 'Cyberpunk Red', url: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=200&auto=format&fit=crop&q=80' },
+          { id: 'av-3', name: 'Neon Samurai', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80' },
+          { id: 'av-4', name: 'Cinema Buff', url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=200&auto=format&fit=crop&q=80' },
+          { id: 'av-5', name: 'Anime Girl', url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80' },
+          { id: 'av-6', name: 'Retro Gamer', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80' }
         ]
       }
     ];
 
-    window.openPresetAvatarsModal = async function() {
-      const modal = document.getElementById('preset-avatars-modal');
-      if (!modal) return;
-      modal.style.display = 'flex';
+    window.syncPresetAvatarsFromFirestore = async function() {
+      try {
+        const cached = localStorage.getItem('maxplay_avatar_presets_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            window.presetAvatarGroups = parsed;
+          }
+        }
+      } catch (e) {}
 
       try {
-        if (window.db) {
-          const snap = await getDoc(doc(window.db, 'settings', 'avatar_presets'));
+        if (window.db && window.getDoc && window.doc) {
+          const snap = await window.getDoc(window.doc(window.db, 'settings', 'avatar_presets'));
           if (snap.exists() && Array.isArray(snap.data().groups) && snap.data().groups.length > 0) {
-            window.presetAvatarGroups = snap.data().groups;
+            window.presetAvatarGroups = snap.data().groups.map((g, idx) => ({
+              id: g.id || ('grp-' + (idx + 1)),
+              title: (!g.title || g.title.toLowerCase() === 'jujutsu kaisen & anime legends')
+                ? (idx === 0 ? 'Anime & Movie Legends' : ('Collection #' + (idx + 1)))
+                : g.title,
+              order: typeof g.order === 'number' ? g.order : (idx + 1),
+              avatars: (g.avatars || []).map((a, aIdx) => ({
+                id: a.id || ('av-' + (idx + 1) + '-' + (aIdx + 1)),
+                name: a.name || ('Character ' + (aIdx + 1)),
+                url: a.url || ''
+              }))
+            }));
+            try {
+              localStorage.setItem('maxplay_avatar_presets_cache', JSON.stringify(window.presetAvatarGroups));
+            } catch (e) {}
           }
         }
       } catch (e) {
         console.warn('Could not load preset avatars from Firestore:', e);
       }
+    };
+
+    window.openPresetAvatarsModal = async function() {
+      const modal = document.getElementById('preset-avatars-modal');
+      if (!modal) return;
+      modal.style.display = 'flex';
+      await window.syncPresetAvatarsFromFirestore();
       window.renderPresetAvatarGroups();
     };
 
@@ -20775,7 +20805,7 @@ docs.forEach(docItem => {
         const isFirst = gIdx === 0;
         const avatarsHtml = (grp.avatars || []).map((av, aIdx) => `
           <div style="display:grid; grid-template-columns: 44px 1fr 1.6fr auto; gap:8px; align-items:center; background:rgba(0,0,0,0.3); padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
-            <img src="${(av.url || '').replace(/"/g, '&quot;') || 'https://api.dicebear.com/9.x/adventurer/svg?seed=MaxPlay'}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:1px solid rgba(139,92,246,0.5); background:#18181b;" onerror="this.src='https://api.dicebear.com/9.x/adventurer/svg?seed=Fallback'">
+            <img id="preset-avatar-img-${gIdx}-${aIdx}" src="${(av.url || '').replace(/"/g, '&quot;') || 'https://api.dicebear.com/9.x/adventurer/svg?seed=MaxPlay'}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:1px solid rgba(139,92,246,0.5); background:#18181b;" onerror="this.src='https://api.dicebear.com/9.x/adventurer/svg?seed=Fallback'">
             <input type="text" class="input-control" placeholder="Character / Avatar Name" value="${(av.name || '').replace(/"/g, '&quot;')}" oninput="window.updatePresetAvatarField(${gIdx}, ${aIdx}, 'name', this.value)" style="height:34px; font-size:12px;">
             <input type="text" class="input-control" placeholder="Avatar Image URL (https://...)" value="${(av.url || '').replace(/"/g, '&quot;')}" oninput="window.updatePresetAvatarField(${gIdx}, ${aIdx}, 'url', this.value)" style="height:34px; font-size:12px;">
             <button type="button" onclick="window.removePresetAvatarItem(${gIdx}, ${aIdx})" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#EF4444; width:32px; height:32px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Remove Avatar">
@@ -20791,7 +20821,7 @@ docs.forEach(docItem => {
                 <span style="font-size:11px; font-weight:800; padding:4px 8px; border-radius:6px; background:${isFirst ? 'linear-gradient(135deg, #8B5CF6, #06B6D4)' : 'rgba(255,255,255,0.08)'}; color:#FFF; white-space:nowrap;">
                   ${isFirst ? '★ #1 Main Profile Row' : `#${gIdx + 1} Collection`}
                 </span>
-                <input type="text" class="input-control" placeholder="Content / Series Title (e.g. Solo Leveling)" value="${(grp.title || '').replace(/"/g, '&quot;')}" oninput="window.presetAvatarGroups[${gIdx}].title = this.value" style="height:36px; font-size:13px; font-weight:700; flex:1;">
+                <input type="text" class="input-control" placeholder="Collection Title (e.g. Anime & Movie Legends)" value="${(grp.title || '').replace(/"/g, '&quot;')}" oninput="window.presetAvatarGroups[${gIdx}].title = this.value" style="height:36px; font-size:13px; font-weight:700; flex:1;">
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
                 <button type="button" onclick="window.movePresetAvatarGroup(${gIdx}, -1)" ${gIdx === 0 ? 'disabled' : ''} style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:#FFF; width:32px; height:32px; border-radius:8px; cursor:pointer; opacity:${gIdx === 0 ? 0.35 : 1};" title="Move Up">
@@ -20819,9 +20849,10 @@ docs.forEach(docItem => {
     window.addPresetAvatarGroup = function() {
       window.presetAvatarGroups.push({
         id: 'grp_' + Date.now(),
-        title: 'New Content Collection',
+        title: window.presetAvatarGroups.length === 0 ? 'Anime & Movie Legends' : 'New Content Collection',
+        order: window.presetAvatarGroups.length + 1,
         avatars: [
-          { name: 'Character 1', url: '' }
+          { id: 'av_' + Date.now(), name: 'Character 1', url: '' }
         ]
       });
       window.renderPresetAvatarGroups();
@@ -20846,7 +20877,11 @@ docs.forEach(docItem => {
       if (!Array.isArray(window.presetAvatarGroups[gIdx].avatars)) {
         window.presetAvatarGroups[gIdx].avatars = [];
       }
-      window.presetAvatarGroups[gIdx].avatars.push({ name: '', url: '' });
+      window.presetAvatarGroups[gIdx].avatars.push({
+        id: 'av_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name: '',
+        url: ''
+      });
       window.renderPresetAvatarGroups();
     };
 
@@ -20860,7 +20895,10 @@ docs.forEach(docItem => {
       if (!window.presetAvatarGroups[gIdx]?.avatars?.[aIdx]) return;
       window.presetAvatarGroups[gIdx].avatars[aIdx][field] = val;
       if (field === 'url') {
-        window.renderPresetAvatarGroups();
+        const imgEl = document.getElementById(`preset-avatar-img-${gIdx}-${aIdx}`);
+        if (imgEl) {
+          imgEl.src = val || 'https://api.dicebear.com/9.x/adventurer/svg?seed=MaxPlay';
+        }
       }
     };
 
@@ -20871,19 +20909,30 @@ docs.forEach(docItem => {
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
       }
       try {
-        const cleanedGroups = (window.presetAvatarGroups || []).map(g => ({
-          id: g.id || ('grp_' + Math.random().toString(36).slice(2, 8)),
-          title: (g.title || 'Featured Collection').trim(),
-          avatars: (g.avatars || []).filter(a => a && a.url && a.url.trim()).map(a => ({
-            name: (a.name || 'Character').trim(),
+        const cleanedGroups = (window.presetAvatarGroups || []).map((g, gIdx) => ({
+          id: g.id || ('grp_' + (gIdx + 1) + '_' + Math.random().toString(36).slice(2, 6)),
+          title: (g.title || (gIdx === 0 ? 'Anime & Movie Legends' : 'Featured Collection')).trim(),
+          order: gIdx + 1,
+          avatars: (g.avatars || []).filter(a => a && a.url && a.url.trim()).map((a, aIdx) => ({
+            id: a.id || ('av_' + (gIdx + 1) + '_' + (aIdx + 1)),
+            name: (a.name || ('Character ' + (aIdx + 1))).trim(),
             url: a.url.trim()
           }))
         })).filter(g => g.avatars.length > 0);
 
-        await setDoc(doc(window.db, 'settings', 'avatar_presets'), {
+        if (!window.db || !window.setDoc || !window.doc) {
+          throw new Error('Firebase Firestore is still initializing. Please try again in a second.');
+        }
+
+        await window.setDoc(window.doc(window.db, 'settings', 'avatar_presets'), {
           groups: cleanedGroups,
           updatedAt: new Date().toISOString()
         }, { merge: true });
+
+        window.presetAvatarGroups = cleanedGroups;
+        try {
+          localStorage.setItem('maxplay_avatar_presets_cache', JSON.stringify(cleanedGroups));
+        } catch (e) {}
 
         if (window.showToast) window.showToast('Preset Avatar Collections saved to Firestore!');
         document.getElementById('preset-avatars-modal').style.display = 'none';

@@ -176,10 +176,16 @@ export const PlayerControls: React.FC<PlayerControlsProps> = React.memo(({
                 e.stopPropagation();
                 onBack();
               }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
               onTouchStart={(e) => {
                 e.stopPropagation();
               }}
-              className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-black/80 hover:bg-black text-white border border-white/35 hover:border-white/70 shadow-2xl cursor-pointer shrink-0 transition-all hover:scale-105 active:scale-90"
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+              }}
+              className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-black/80 hover:bg-black text-white border border-white/35 hover:border-white/70 shadow-2xl cursor-pointer shrink-0 transition-all hover:scale-105 active:scale-90 pointer-events-auto"
               title="Go Back / Exit"
               aria-label="Exit player"
             >

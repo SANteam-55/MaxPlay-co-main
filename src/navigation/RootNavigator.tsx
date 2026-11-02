@@ -358,22 +358,7 @@ export const RootNavigator: React.FC = () => {
       }
 
       // 3. If a detail modal or sub-screen (e.g., Me > Settings, Me > Messages, ContentDetail) is open on active tab:
-      //    If Auto-activate Miniplayer is enabled and a video is actively playing, enter Native PiP mode instead of closing!
       if (isCurrentDetailOpen) {
-        const autoMiniEnabled = localStorage.getItem('maxplay_auto_miniplayer') !== 'false';
-        const activeState = (window as any).__maxplayActivePlaybackState;
-        if (
-          autoMiniEnabled &&
-          activeState?.isPlaying &&
-          typeof (window as any).__enterMaxPlayPipOnBack === 'function' &&
-          (window as any).__enterMaxPlayPipOnBack()
-        ) {
-          try {
-            window.history.pushState({ tab: activeTab, isDetailOpen: true }, '', cleanUrl);
-          } catch {}
-          return 'HANDLED';
-        }
-
         const eventName = `MAXPLAY_POP_STACK_${activeTab.toUpperCase()}`;
         window.dispatchEvent(new CustomEvent(eventName));
         try {

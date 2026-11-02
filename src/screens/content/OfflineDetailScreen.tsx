@@ -35,6 +35,17 @@ export const OfflineDetailScreen: React.FC<OfflineDetailScreenProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // Pause any background video players in other tabs so Android hardware MediaCodec decoders are freed
+    try {
+      document.querySelectorAll('video').forEach((v) => {
+        try {
+          v.pause();
+        } catch {}
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     let isCancelled = false;
     const fetchUrl = async () => {
       try {
@@ -150,12 +161,17 @@ export const OfflineDetailScreen: React.FC<OfflineDetailScreenProps> = ({
         <div className="w-full max-w-5xl mx-auto aspect-video max-h-[48vh] sm:max-h-[55vh]">
           <InlinePlayer
             title={playerTitle}
-            posterUrl={currentFile.posterUrl}
+            posterUrl={
+              currentFile.posterUrl && !currentFile.posterUrl.includes('/device-video-thumb/')
+                ? currentFile.posterUrl
+                : undefined
+            }
             videoUrl={currentBlobUrl || currentFile.videoUrl || ''}
             availableLanguages={currentFile.language ? [currentFile.language] : ['Default']}
             activeLanguage={currentFile.language || 'Default'}
             activeQuality={currentFile.quality || 'auto'}
             onBack={onBack}
+            autoPlay={true}
             hasNextEpisode={hasNextEpisode}
             onNextEpisode={hasNextEpisode ? handleNextEpisode : undefined}
             streamKey={`offline_${currentFile.id}_${currentFile.storageKey || ''}`}

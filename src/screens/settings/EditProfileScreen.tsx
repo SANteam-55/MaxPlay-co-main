@@ -39,11 +39,11 @@ export interface AvatarGroup {
   avatars: AvatarItem[];
 }
 
-// Default categorized preset avatar groups (used when Admin has not customized groups yet)
+// Default categorized preset avatar groups (used only when Admin has not saved custom groups yet)
 const DEFAULT_AVATAR_GROUPS: AvatarGroup[] = [
   {
     id: 'grp-1',
-    title: 'Jujutsu Kaisen & Anime Legends',
+    title: 'Anime & Movie Legends',
     order: 1,
     avatars: [
       { id: 'av-1', name: 'Gojo Satoru', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80' },
@@ -55,6 +55,47 @@ const DEFAULT_AVATAR_GROUPS: AvatarGroup[] = [
     ],
   },
 ];
+
+const normalizeAvatarGroups = (rawGroups: any[]): AvatarGroup[] => {
+  if (!Array.isArray(rawGroups)) return [];
+  return rawGroups
+    .filter((g: any) => g && Array.isArray(g.avatars) && g.avatars.length > 0)
+    .map((g: any, idx: number) => {
+      const rawTitle = (g.title || '').trim();
+      const normalizedTitle =
+        !rawTitle || rawTitle.toLowerCase() === 'jujutsu kaisen & anime legends'
+          ? idx === 0
+            ? 'Anime & Movie Legends'
+            : `Collection #${idx + 1}`
+          : rawTitle;
+      return {
+        id: g.id || `grp-${idx + 1}`,
+        title: normalizedTitle,
+        order: typeof g.order === 'number' ? g.order : idx + 1,
+        avatars: g.avatars
+          .filter((a: any) => a && typeof a.url === 'string' && a.url.trim().length > 0)
+          .map((a: any, aIdx: number) => ({
+            id: a.id || `av-${idx + 1}-${aIdx + 1}`,
+            name: (a.name || `Character ${aIdx + 1}`).trim(),
+            url: a.url.trim(),
+          })),
+      };
+    })
+    .filter((g: AvatarGroup) => g.avatars.length > 0)
+    .sort((a: AvatarGroup, b: AvatarGroup) => a.order - b.order);
+};
+
+const loadCachedAvatarGroups = (): AvatarGroup[] => {
+  try {
+    const raw = localStorage.getItem('maxplay_avatar_presets_cache');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const valid = normalizeAvatarGroups(parsed);
+      if (valid.length > 0) return valid;
+    }
+  } catch {}
+  return DEFAULT_AVATAR_GROUPS;
+};
 
 const BIO_TAG_SUGGESTIONS = [
   '🎬 Anime & Series Buff',
@@ -80,41 +121,44 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [avatarGroups, setAvatarGroups] = useState<AvatarGroup[]>(DEFAULT_AVATAR_GROUPS);
+  const [toastMessage, setToastMessage] = useState(null as string | null);
+  const [avatarGroups, setAvatarGroups] = useState<AvatarGroup[]>(() => loadCachedAvatarGroups());
   const [showMoreAvatarsModal, setShowMoreAvatarsModal] = useState(false);
 
-  // Subscribe to Admin-configured Preset Avatar Groups in Firestore
+  // Subscribe to Admin-configured Preset Avatar Groups in Firestore + storage sync
   useEffect(() => {
     const unsub = onSnapshot(
       doc(db, 'settings', 'avatar_presets'),
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          if (Array.isArray(data?.groups) && data.groups.length > 0) {
-            const validGroups = data.groups
-              .filter((g: any) => g && Array.isArray(g.avatars) && g.avatars.length > 0)
-              .map((g: any, idx: number) => ({
-                id: g.id || `grp-${idx + 1}`,
-                title: g.title || `Collection #${idx + 1}`,
-                order: typeof g.order === 'number' ? g.order : idx + 1,
-                avatars: g.avatars.filter((a: any) => a && a.url),
-              }))
-              .filter((g: AvatarGroup) => g.avatars.length > 0)
-              .sort((a: AvatarGroup, b: AvatarGroup) => a.order - b.order);
-            if (validGroups.length > 0) {
-              setAvatarGroups(validGroups);
-              return;
-            }
+          const validGroups = normalizeAvatarGroups(data?.groups);
+          if (validGroups.length > 0) {
+            setAvatarGroups(validGroups);
+            try {
+              localStorage.setItem('maxplay_avatar_presets_cache', JSON.stringify(validGroups));
+            } catch {}
+            return;
           }
         }
-        setAvatarGroups(DEFAULT_AVATAR_GROUPS);
+        setAvatarGroups(loadCachedAvatarGroups());
       },
       () => {
-        setAvatarGroups(DEFAULT_AVATAR_GROUPS);
+        setAvatarGroups(loadCachedAvatarGroups());
       }
     );
-    return () => unsub();
+
+    const onStorageSync = (e: StorageEvent) => {
+      if (e.key === 'maxplay_avatar_presets_cache') {
+        setAvatarGroups(loadCachedAvatarGroups());
+      }
+    };
+    window.addEventListener('storage', onStorageSync);
+
+    return () => {
+      unsub();
+      window.removeEventListener('storage', onStorageSync);
+    };
   }, []);
 
   // Sync state if user changes
@@ -380,7 +424,7 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
               <div className="flex items-center gap-1.5 min-w-0">
                 <Sparkles className="h-3.5 w-3.5 text-[#A78BFA] shrink-0" />
                 <span className="text-[11.5px] font-extrabold text-white tracking-wide truncate">
-                  {avatarGroups[0]?.title || 'Iconic Character Avatars'}
+                  {avatarGroups[0]?.title || 'Anime & Movie Legends'}
                 </span>
               </div>
               <button

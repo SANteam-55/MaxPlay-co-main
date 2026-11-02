@@ -1048,31 +1048,38 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
   const savedSwitchTimeRef = useRef<number>(0);
   const wasPlayingBeforeSwitchRef = useRef<boolean>(false);
   const networkStruggleCountRef = useRef<number>(0);
+  const decodeErrorRetryCountRef = useRef<number>(0);
   const isInitialSeekDoneRef = useRef<boolean>(initialTime <= 0);
+
+  useEffect(() => {
+    decodeErrorRetryCountRef.current = 0;
+  }, [resolvedStreamUrl, streamKey]);
 
   // Expose helper to enter Native Android PiP or Web PiP when pressing Back on Details Screen
   useEffect(() => {
     const enterPipOnBack = (): boolean => {
-      const video = videoRef.current;
-      const activelyPlaying = Boolean(
-        resolvedStreamUrl && (isPlaying || hasStarted || (video && !video.paused && video.currentTime > 0))
-      );
-      if (!activelyPlaying) return false;
+      try {
+        const video = videoRef.current;
+        const activelyPlaying = Boolean(
+          resolvedStreamUrl && (isPlaying || hasStarted || (video && !video.paused && video.currentTime > 0))
+        );
+        if (!activelyPlaying) return false;
 
-      if (NativeBridgeService.isNativeAndroid()) {
-        const entered = NativeBridgeService.enterNativePipMode();
-        if (entered) {
-          setIsInNativePip(true);
-          setShowControls(false);
-          setActiveMenu(null);
+        if (typeof NativeBridgeService.isNativeAndroid === 'function' && NativeBridgeService.isNativeAndroid()) {
+          const entered = NativeBridgeService.enterNativePipMode();
+          if (entered) {
+            setIsInNativePip(true);
+            setShowControls(false);
+            setActiveMenu(null);
+            return true;
+          }
+        }
+
+        if (video && typeof (video as any).requestPictureInPicture === 'function' && !(document as any).pictureInPictureElement) {
+          (video as any).requestPictureInPicture().catch(() => {});
           return true;
         }
-      }
-
-      if (video && typeof (video as any).requestPictureInPicture === 'function' && !(document as any).pictureInPictureElement) {
-        (video as any).requestPictureInPicture().catch(() => {});
-        return true;
-      }
+      } catch {}
       return false;
     };
     (window as any).__enterMaxPlayPipOnBack = enterPipOnBack;
@@ -2138,8 +2145,73 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
             onComplete?.();
           }}
           onError={(e: any) => {
+            const videoEl = e.currentTarget as HTMLVideoElement | null;
+            const err = videoEl?.error;
+            const isDecodeError = Boolean(
+              err && (err.code === 3 || (err.message && err.message.includes('PIPELINE_ERROR_DECODE')))
+            );
+
+            // Auto-recover from hardware MediaCodec / non-keyframe packet decode glitches (PIPELINE_ERROR_DECODE)
+            if (isDecodeError && videoEl && decodeErrorRetryCountRef.current < 4) {
+              decodeErrorRetryCountRef.current += 1;
+              const tsMatch = err?.message?.match(/timestamp=(\d+)/);
+              const packetSec = tsMatch ? parseInt(tsMatch[1], 10) / 1_000_000 : 0;
+              const baseSec = Math.max(videoEl.currentTime || 0, currentTime || 0, packetSec);
+              // Step forward past the damaged non-keyframe packet to the next clean GOP/keyframe
+              const safeSkipSec = baseSec + 0.5 * decodeErrorRetryCountRef.current;
+
+              console.warn(
+                `[InlinePlayer] Auto-recovering from Decode Error (#${decodeErrorRetryCountRef.current}) at ${baseSec.toFixed(2)}s -> skipping to ${safeSkipSec.toFixed(2)}s`
+              );
+
+              setPlaybackError(null);
+              setIsLoading(true);
+              targetSeekTimeRef.current = safeSkipSec;
+              isInitialSeekDoneRef.current = false;
+
+              try {
+                // Release any lingering background video decoders in other tabs
+                document.querySelectorAll('video').forEach((v) => {
+                  if (v !== videoEl) {
+                    try {
+                      v.pause();
+                    } catch {}
+                  }
+                });
+              } catch {}
+
+              setTimeout(() => {
+                if (!videoRef.current) return;
+                try {
+                  const v = videoRef.current;
+                  const cleanBase = activeVideoUrl.split('&_dec_retry=')[0].split('?_dec_retry=')[0];
+                  const sep = cleanBase.includes('?') ? '&' : '?';
+                  v.src = `${cleanBase}${sep}_dec_retry=${decodeErrorRetryCountRef.current}`;
+                  v.load();
+                  const onLoadedMeta = () => {
+                    v.removeEventListener('loadedmetadata', onLoadedMeta);
+                    try {
+                      if (safeSkipSec > 0 && (!v.duration || safeSkipSec < v.duration - 0.5)) {
+                        v.currentTime = safeSkipSec;
+                      }
+                    } catch {}
+                    v.play()
+                      .then(() => {
+                        setIsPlaying(true);
+                        setHasStarted(true);
+                        setIsLoading(false);
+                      })
+                      .catch(() => {
+                        setIsLoading(false);
+                      });
+                  };
+                  v.addEventListener('loadedmetadata', onLoadedMeta);
+                } catch {}
+              }, 120);
+              return;
+            }
+
             setIsLoading(false);
-            const err = e.currentTarget.error;
             let msg = "Unknown Error";
             if (err) {
               switch (err.code) {
@@ -2225,8 +2297,8 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
           </div>
         )}
 
-        {/* Dedicated Top-Left Exit Button when PlayerControls are not mounted (unstarted, error, or iframe) */}
-        {onBack && (!hasStarted || playbackError || isIframe) && (
+        {/* Dedicated Top-Left Exit Button when PlayerControls are not visible (unstarted, controls hidden in portrait, error, or iframe) */}
+        {onBack && !isInNativePip && !isLocked && (!hasStarted || (!showControls && !isFullscreen) || playbackError || isIframe) && (
           <button
             type="button"
             onClick={(e) => {
@@ -2234,7 +2306,13 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
               e.stopPropagation();
               onBack();
             }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+            }}
             onTouchStart={(e) => {
+              e.stopPropagation();
+            }}
+            onTouchEnd={(e) => {
               e.stopPropagation();
             }}
             className="absolute top-3 left-3 sm:top-4 sm:left-4 z-40 flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-black/85 hover:bg-black text-white border border-white/35 hover:border-white/70 shadow-2xl cursor-pointer pointer-events-auto transition-transform hover:scale-105 active:scale-90"
