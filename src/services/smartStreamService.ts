@@ -690,24 +690,34 @@ export class SmartStreamService {
         return "0";
       };
 
+      const preferByseOrigin =
+        lower.includes("filemoon") || lower.includes("bysedikamoum")
+          ? "https://byseraguci.com"
+          : origin;
+
       let videoTitle = "";
       let defaultLangCode = "";
-      try {
-        const [detRes, setRes] = await Promise.all([
-          fetch(`${origin}/api/videos/${code}/embed/details`).catch(() => null),
-          fetch(`${origin}/api/videos/${code}/settings`).catch(() => null),
-        ]);
-        if (detRes && detRes.ok) {
-          const det = await detRes.json().catch(() => ({}));
-          videoTitle = det?.title || "";
-        }
-        if (setRes && setRes.ok) {
-          const st = await setRes.json().catch(() => ({}));
-          defaultLangCode = st?.default_language || "";
-        }
-      } catch {}
+      // Run metadata enrichment in parallel (non-blocking) so attestation & playback decryption start at 0ms!
+      const metaFetchPromise = (async () => {
+        try {
+          const [detRes, setRes] = await Promise.all([
+            fetch(`${preferByseOrigin}/api/videos/${code}/embed/details`).catch(() => null),
+            fetch(`${preferByseOrigin}/api/videos/${code}/settings`).catch(() => null),
+          ]);
+          if (detRes && detRes.ok) {
+            const det = await detRes.json().catch(() => ({}));
+            videoTitle = det?.title || "";
+          }
+          if (setRes && setRes.ok) {
+            const st = await setRes.json().catch(() => ({}));
+            defaultLangCode = st?.default_language || "";
+          }
+        } catch {}
+      })();
 
-      const candidateOrigins = Array.from(new Set([origin, "https://byseraguci.com", "https://f16px.com"]));
+      const candidateOrigins = Array.from(
+        new Set([preferByseOrigin, "https://byseraguci.com", "https://f16px.com", origin])
+      );
       for (const apiOrigin of candidateOrigins) {
         try {
           let fingerprint = this.byseClientAttestCache.get(apiOrigin)?.fingerprint;
@@ -908,6 +918,10 @@ export class SmartStreamService {
               sourcesList[0];
 
             if (bestM3u8) {
+              await Promise.race([
+                metaFetchPromise,
+                new Promise((r) => setTimeout(r, 220)),
+              ]);
               const detectedAudios: string[] = [];
               const combinedMeta = `${defaultLangCode} ${videoTitle}`.toLowerCase();
               const addLang = (l: string) => {
@@ -980,6 +994,39 @@ export class SmartStreamService {
     expiresAt?: number;
   }> {
     const isKotlinApp = NativeBridgeService.isRunningInKotlinApp();
+    const lowerUrl = trimmed.toLowerCase();
+    const isByseOrFilemoon =
+      lowerUrl.includes("byse") ||
+      lowerUrl.includes("filemoon") ||
+      lowerUrl.includes("f16px") ||
+      lowerUrl.includes("n1mwq") ||
+      lowerUrl.includes("moonmov") ||
+      lowerUrl.includes("kerapoxy");
+
+    // 1.2 Fast-Path Direct Client-Side Byse / Filemoon API Extraction (in Kotlin APK, resolves in ~350ms without waiting on WebView Sniffer)
+    if (isKotlinApp && isByseOrFilemoon) {
+      try {
+        const clientByse = await this.extractByseClientSide(trimmed);
+        if (clientByse.ok && clientByse.m3u8Url) {
+          const ttlMs = 170 * 60 * 1000;
+          const expiresAt = Date.now() + ttlMs;
+          const chosenUrl = clientByse.m3u8Url;
+          const meta: CachedStreamMetadata = {
+            ...(clientByse.meta || {}),
+            rawM3u8Url: clientByse.m3u8Url,
+          };
+          this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
+          this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
+          return {
+            streamUrl: chosenUrl,
+            isExtracted: true,
+            cached: false,
+            isEmbed: false,
+            expiresAt,
+          };
+        }
+      } catch {}
+    }
 
     // 1.5 Priority Tier (Android APK): Inbuilt Native Kotlin Scraper & Headless Sniffer (Zero CORS)
     if (isKotlinApp) {
@@ -1011,38 +1058,6 @@ export class SmartStreamService {
         }
       } catch (nativeErr) {
         console.warn("[SmartStreamService] Native Kotlin scraper fallback to client/server:", nativeErr);
-      }
-    }
-
-    // 1.8 Direct Client-Side Byse / Filemoon API Extraction (in Kotlin APK if Stage 1 bridge fell back)
-    const lowerUrl = trimmed.toLowerCase();
-    const isByseOrFilemoon =
-      lowerUrl.includes("byse") ||
-      lowerUrl.includes("filemoon") ||
-      lowerUrl.includes("f16px") ||
-      lowerUrl.includes("n1mwq") ||
-      lowerUrl.includes("moonmov") ||
-      lowerUrl.includes("kerapoxy");
-
-    if (isKotlinApp && isByseOrFilemoon) {
-      const clientByse = await this.extractByseClientSide(trimmed);
-      if (clientByse.ok && clientByse.m3u8Url) {
-        const ttlMs = 170 * 60 * 1000;
-        const expiresAt = Date.now() + ttlMs;
-        const chosenUrl = clientByse.m3u8Url;
-        const meta: CachedStreamMetadata = {
-          ...(clientByse.meta || {}),
-          rawM3u8Url: clientByse.m3u8Url,
-        };
-        this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
-        this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
-        return {
-          streamUrl: chosenUrl,
-          isExtracted: true,
-          cached: false,
-          isEmbed: false,
-          expiresAt,
-        };
       }
     }
 

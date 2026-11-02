@@ -117,6 +117,28 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             }
         }
 
+        // 0.5 Native on-device /api/proxy?url=... handler (Zero CORS, Zero Cloud Roundtrip regardless of whether loaded from local asset host or live URL!)
+        if (path == "/api/proxy") {
+            if (method == "OPTIONS") {
+                return WebResourceResponse(
+                    "text/plain",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    buildCorsHeaders("text/plain"),
+                    ByteArrayInputStream(ByteArray(0))
+                )
+            }
+            val targetUrl = uri.getQueryParameter("url")
+            val explicitReferer = uri.getQueryParameter("referer")
+            if (!targetUrl.isNullOrBlank()) {
+                if (!explicitReferer.isNullOrBlank()) {
+                    registerStreamReferer(targetUrl, explicitReferer)
+                }
+                return proxyExternalUrlWithOkHttp(targetUrl, request, explicitReferer)
+            }
+        }
+
         // 1. Serve Local Bundled WebApp & Native Proxy on https://appassets.androidplatform.net
         if (host == VIRTUAL_ASSET_HOST) {
             if (method == "OPTIONS") {
@@ -131,18 +153,6 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             }
 
             val rawPath = uri.path ?: "/"
-
-            // 1a. Native on-device /api/proxy?url=... handler (Zero CORS, Zero Cloud Timeout, Zero UI Thread Lock!)
-            if (rawPath == "/api/proxy") {
-                val targetUrl = uri.getQueryParameter("url")
-                val explicitReferer = uri.getQueryParameter("referer")
-                if (!targetUrl.isNullOrBlank()) {
-                    if (!explicitReferer.isNullOrBlank()) {
-                        registerStreamReferer(targetUrl, explicitReferer)
-                    }
-                    return proxyExternalUrlWithOkHttp(targetUrl, request, explicitReferer)
-                }
-            }
 
             // 1b. Disable PWA sw.js inside native APK since assets are already 100% local in APK
             if (rawPath == "/sw.js") {

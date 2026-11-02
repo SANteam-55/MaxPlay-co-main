@@ -73,13 +73,15 @@ export const RootNavigator: React.FC = () => {
     };
   }, []);
 
-  // Request Web Notification permission upfront and handle tapping native status-bar notifications
+  // Request Web/Native Notification & Background Download permissions upfront and handle tapping native status-bar notifications
   useEffect(() => {
-    try {
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().catch(() => {});
-      }
-    } catch {}
+    NativeBridgeService.requestBackgroundDownloadAndNotificationPermissions();
+
+    const requestOnFirstTouch = () => {
+      NativeBridgeService.requestBackgroundDownloadAndNotificationPermissions();
+      window.removeEventListener('pointerdown', requestOnFirstTouch);
+    };
+    window.addEventListener('pointerdown', requestOnFirstTouch, { passive: true });
 
     const handleOpenMessagesFromNotification = () => {
       setActiveTabState('me');
@@ -91,6 +93,7 @@ export const RootNavigator: React.FC = () => {
 
     window.addEventListener('MAXPLAY_OPEN_MESSAGES_SCREEN', handleOpenMessagesFromNotification);
     return () => {
+      window.removeEventListener('pointerdown', requestOnFirstTouch);
       window.removeEventListener('MAXPLAY_OPEN_MESSAGES_SCREEN', handleOpenMessagesFromNotification);
     };
   }, []);

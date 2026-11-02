@@ -436,9 +436,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var bgDownloadWakeLock: android.os.PowerManager.WakeLock? = null
+
     private fun createNotificationChannel() {
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val nm = getSystemService(NOTIFICATION_SERVICE) as? android.app.NotificationManager
                 val channel = android.app.NotificationChannel(
                     "maxplay_inbox_alerts",
                     "MaxPlay Messages & Updates",
@@ -447,8 +450,16 @@ class MainActivity : AppCompatActivity() {
                     description = "Real-time notifications for MaxPlay inbox messages and updates"
                     enableVibration(true)
                 }
-                val nm = getSystemService(NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                val dlChannel = android.app.NotificationChannel(
+                    "maxplay_bg_downloads",
+                    "MaxPlay Background Downloads",
+                    android.app.NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Shows live background download progress for movies and episodes"
+                    enableVibration(false)
+                }
                 nm?.createNotificationChannel(channel)
+                nm?.createNotificationChannel(dlChannel)
             }
         } catch (_: Exception) {}
     }
@@ -477,6 +488,80 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    fun requestBackgroundDownloadAndNotifPermission(): Boolean {
+        return try {
+            runOnUiThread {
+                try {
+                    requestStartupPermissions()
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        val pm = getSystemService(POWER_SERVICE) as? android.os.PowerManager
+                        if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                            val prefs = getSharedPreferences("maxplay_native_prefs", MODE_PRIVATE)
+                            val alreadyPrompted = prefs.getBoolean("bg_battery_prompted", false)
+                            if (!alreadyPrompted) {
+                                prefs.edit().putBoolean("bg_battery_prompted", true).apply()
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:$packageName")
+                                )
+                                startActivity(intent)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    @SuppressLint("WakelockTimeout")
+    fun updateBackgroundDownloadState(active: Boolean, title: String, progress: Int) {
+        runOnUiThread {
+            try {
+                val nm = getSystemService(NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                if (active) {
+                    webView.resumeTimers()
+                    if (bgDownloadWakeLock == null) {
+                        val pm = getSystemService(POWER_SERVICE) as? android.os.PowerManager
+                        bgDownloadWakeLock = pm?.newWakeLock(
+                            android.os.PowerManager.PARTIAL_WAKE_LOCK,
+                            "MaxPlay::BackgroundDownloadWakeLock"
+                        )?.apply {
+                            setReferenceCounted(false)
+                        }
+                    }
+                    if (bgDownloadWakeLock?.isHeld == false) {
+                        bgDownloadWakeLock?.acquire(4 * 60 * 60 * 1000L)
+                    }
+
+                    if (nm != null) {
+                        val pct = progress.coerceIn(0, 100)
+                        val builder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            android.app.Notification.Builder(this, "maxplay_bg_downloads")
+                        } else {
+                            @Suppress("DEPRECATION")
+                            android.app.Notification.Builder(this)
+                        }
+                        builder.setSmallIcon(R.drawable.ic_stat_maxplay)
+                            .setContentTitle(title.ifBlank { "Downloading in MaxPlay" })
+                            .setContentText("Downloading in background ($pct%)")
+                            .setOngoing(true)
+                            .setOnlyAlertOnce(true)
+                            .setProgress(100, pct, pct <= 0)
+                        nm.notify(9099, builder.build())
+                    }
+                } else {
+                    if (bgDownloadWakeLock?.isHeld == true) {
+                        bgDownloadWakeLock?.release()
+                    }
+                    nm?.cancel(9099)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun requestVideoStoragePermission(): Boolean {

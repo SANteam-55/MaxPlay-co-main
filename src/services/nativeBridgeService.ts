@@ -101,6 +101,8 @@ interface MaxPlayKotlinBridge {
   closePopunderAd?: () => boolean;
   isPopunderAdOpen?: () => boolean;
   shareContent?: (title: string, text: string, url: string) => boolean;
+  requestBackgroundDownloadPermission?: () => boolean;
+  setBackgroundDownloadActive?: (active: boolean, title: string, progress: number) => boolean;
 }
 
 export interface ApkUpdateProgressState {
@@ -677,13 +679,28 @@ export class NativeBridgeService {
         const masterUrl: string = scrapeData.m3u8Url;
         const customHeaders: Record<string, string> = scrapeData.headers || {};
 
-        // Step 3: Parse Master HLS Playlist directly via Native CORS-free stream
-        const meta = await this.parseHlsManifestOnDevice(
-          masterUrl,
-          customHeaders,
-          requestedDurationSec,
-          scrapeData.byseMeta
-        );
+        // Step 3: Fast-parse Master HLS Playlist (skipping secondary sub-playlist duration fetch during startup, capped at 1.2s so playback starts immediately!)
+        const fallbackMeta = {
+          qualities: ['1080p', '720p'],
+          qualityLinks: { '1080p': masterUrl, '720p': masterUrl },
+          downloadQualities: [
+            { id: '1080p', label: '1080p Full HD', sizeMb: 450, url: masterUrl, bandwidth: 2200000 },
+            { id: '720p', label: '720p HD', sizeMb: 240, url: masterUrl, bandwidth: 1100000 },
+          ],
+          audioTracks: Array.isArray(scrapeData.byseMeta?.audioTracks) ? scrapeData.byseMeta.audioTracks : [],
+          duration: requestedDurationSec || 1440,
+        };
+
+        const meta = await Promise.race([
+          this.parseHlsManifestOnDevice(
+            masterUrl,
+            customHeaders,
+            requestedDurationSec,
+            scrapeData.byseMeta,
+            requestedDurationSec <= 0
+          ),
+          new Promise<typeof fallbackMeta>((resolve) => setTimeout(() => resolve(fallbackMeta), 1200)),
+        ]);
 
         return {
           ok: true,
@@ -715,7 +732,8 @@ export class NativeBridgeService {
     m3u8Url: string,
     headers: Record<string, string> = {},
     durationSec: number = 0,
-    byseMeta?: any
+    byseMeta?: any,
+    skipSubPlaylistDurationFetch: boolean = false
   ): Promise<{
     qualities: string[];
     qualityLinks: Record<string, string>;
@@ -880,7 +898,7 @@ export class NativeBridgeService {
         if (segSum > 5) {
           detectedDuration = Math.round(segSum);
         }
-      } else if (qualities.length > 0) {
+      } else if (!skipSubPlaylistDurationFetch && qualities.length > 0) {
         const firstVariantUrl = qualityLinks[qualities[0]];
         if (firstVariantUrl && firstVariantUrl !== m3u8Url) {
           try {
@@ -1420,4 +1438,70 @@ export class NativeBridgeService {
     } catch {}
     return false;
   }
+
+  private static activeWakeLock: any = null;
+
+  /**
+   * Requests Background Download, Persistent Storage, and Notification permissions
+   * across both Native Android APK and Web/PWA environments.
+   */
+  public static async requestBackgroundDownloadAndNotificationPermissions(): Promise<void> {
+    try {
+      // 1. Request Web Notification permission so notifications can be sent anytime
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+
+      // 2. Request Persistent Storage so background downloads are never evicted by the OS/browser
+      if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
+        navigator.storage.persist().catch(() => {});
+      }
+
+      // 3. Request Native Android Background Download & Notification permissions inside the APK
+      if (this.isRunningInKotlinApp()) {
+        if (typeof window.MaxPlayNative?.requestBackgroundDownloadPermission === 'function') {
+          window.MaxPlayNative.requestBackgroundDownloadPermission();
+        }
+      }
+    } catch {}
+  }
+
+  /**
+   * Keeps the CPU / WebView awake in the background during active downloads and updates
+   * the native Android status-bar download progress notification.
+   */
+  public static async setBackgroundDownloadState(
+    active: boolean,
+    title: string = 'MaxPlay Download',
+    progress: number = 0
+  ): Promise<void> {
+    try {
+      if (this.isRunningInKotlinApp() && typeof window.MaxPlayNative?.setBackgroundDownloadActive === 'function') {
+        window.MaxPlayNative.setBackgroundDownloadActive(
+          active,
+          title,
+          Math.max(0, Math.min(100, Math.round(progress)))
+        );
+      }
+
+      if (active) {
+        if (!this.activeWakeLock && typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+          try {
+            this.activeWakeLock = await (navigator as any).wakeLock.request('screen');
+            this.activeWakeLock?.addEventListener?.('release', () => {
+              this.activeWakeLock = null;
+            });
+          } catch {}
+        }
+      } else {
+        if (this.activeWakeLock) {
+          try {
+            await this.activeWakeLock.release();
+          } catch {}
+          this.activeWakeLock = null;
+        }
+      }
+    } catch {}
+  }
 }
+

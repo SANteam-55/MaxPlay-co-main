@@ -688,7 +688,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               title={`Top 10 in ${activeTab}`}
               icon={<Trophy className="h-5 w-5 text-amber-400" />}
             />
-            <div className="flex items-center gap-3.5 overflow-x-auto pb-3 pt-1 scrollbar-none">
+            <div
+              className="flex items-center gap-3.5 overflow-x-auto overflow-y-hidden pb-3 pt-1 scrollbar-none"
+              style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+            >
               {top10.map((item: any, index: number) => {
                 const displayPoster = item.customImage || item.posterUrl || item.backdropUrl;
                 const displayTitle = item.customTitle || item.title;
@@ -696,7 +699,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <div
                     key={`${item.id}-${index}`}
                     onClick={() => handleContentClick(item)}
-                    className="group relative shrink-0 flex items-end pl-5 cursor-pointer select-none active:scale-95 transition-transform"
+                    className="group relative shrink-0 flex items-end pl-5 py-1 cursor-pointer select-none active:scale-95 transition-transform"
                   >
                     <div className="relative w-[124px] sm:w-[136px] aspect-[2/3] rounded-[12px] overflow-hidden bg-[#14161D] border border-white/10 shadow-[0_8px_20px_rgba(0,0,0,0.65)] z-10">
                       <img
@@ -704,16 +707,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         alt={displayTitle}
                         loading="lazy"
                         decoding="async"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        draggable={false}
+                        className="w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover:scale-105"
                       />
                       <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/65 via-black/15 to-transparent pointer-events-none" />
                     </div>
                     <span
                       className="
-                        absolute left-0 -bottom-1.5 z-20
-                        font-black text-[74px] sm:text-[82px] leading-[0.82] tracking-tighter
+                        absolute left-0 bottom-0.5 z-20
+                        font-black text-[72px] sm:text-[80px] leading-[0.84] tracking-tighter
                         text-black/85 select-none pointer-events-none
-                        drop-shadow-[0_4px_12px_rgba(0,0,0,0.95)]
+                        drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]
                       "
                       style={{ WebkitTextStroke: '2.5px #FFFFFF' }}
                     >
@@ -743,7 +747,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               title="Coming Soon"
               icon={<Bell className="h-5 w-5 text-[#8B5CF6]" />}
             />
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+            <div
+              className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2 scrollbar-none"
+              style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+            >
               {upcoming.map((item: any, index: number) => (
                 <div key={`${item.id}-${index}`} className="flex flex-col gap-1">
                   <ContentCard item={item} onPress={handleContentClick} />
@@ -1031,7 +1038,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   title={row.title || 'Continue Watching'}
                   icon={icon}
                 />
-                <div className="flex gap-3 overflow-x-auto pb-4 pt-1 scrollbar-none">
+                <div
+                  className="flex gap-3 overflow-x-auto overflow-y-hidden pb-4 pt-1 scrollbar-none"
+                  style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+                >
                   {continueWatchingItems.map(({ content: cwItem, percentWatched, footerLabel }, index) => {
                     const poster = cwItem.customImage || cwItem.posterUrl || cwItem.backdropUrl;
                     return (
@@ -1046,10 +1056,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             src={poster}
                             alt={cwItem.title}
                             loading="lazy"
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            decoding="async"
+                            draggable={false}
+                            className="w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover:scale-105"
                           />
-                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors" />
-                          <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none" />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="w-11 h-11 rounded-full bg-black/45 backdrop-blur-[2px] border-[2px] border-white flex items-center justify-center shadow-[0_4px_16px_rgba(0,0,0,0.65)] group-hover:scale-110 transition-transform">
                               <Play className="w-5 h-5 text-white fill-white ml-0.5" />
                             </div>
@@ -1097,7 +1109,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   title={row.title || `Top 10 in ${activeTab}`}
                   icon={icon}
                 />
-                <div className="flex items-center gap-3.5 overflow-x-auto pb-4 pt-1 scrollbar-none">
+                <div
+                  className="flex items-center gap-3.5 overflow-x-auto overflow-y-hidden pb-3 pt-1 scrollbar-none"
+                  style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+                >
                   {top10Items.map((item: any, index: number) => {
                     const displayPoster = item.customImage || item.posterUrl || item.backdropUrl;
                     const displayTitle = item.customTitle || item.title;
@@ -1105,23 +1120,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div
                         key={`${item.id}-${index}`}
                         onClick={() => handleContentClick(item)}
-                        className="group relative shrink-0 flex items-end pl-5 cursor-pointer select-none active:scale-95 transition-transform"
+                        className="group relative shrink-0 flex items-end pl-5 py-1 cursor-pointer select-none active:scale-95 transition-transform"
                       >
                         <div className="relative w-[124px] sm:w-[136px] aspect-[2/3] rounded-[12px] overflow-hidden bg-[#14161D] border border-white/10 shadow-[0_8px_20px_rgba(0,0,0,0.65)] z-10">
                           <img
                             src={displayPoster}
                             alt={displayTitle}
                             loading="lazy"
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            decoding="async"
+                            draggable={false}
+                            className="w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover:scale-105"
                           />
                           <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/65 via-black/15 to-transparent pointer-events-none" />
                         </div>
                         <span
                           className="
-                            absolute left-0 -bottom-1.5 z-20
-                            font-black text-[74px] sm:text-[82px] leading-[0.82] tracking-tighter
+                            absolute left-0 bottom-0.5 z-20
+                            font-black text-[72px] sm:text-[80px] leading-[0.84] tracking-tighter
                             text-black/85 select-none pointer-events-none
-                            drop-shadow-[0_4px_12px_rgba(0,0,0,0.95)]
+                            drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]
                           "
                           style={{ WebkitTextStroke: '2.5px #FFFFFF' }}
                         >
@@ -1156,7 +1173,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 icon={icon}
                 onActionPress={isDefaultStyle && onSeeAllCategory ? () => onSeeAllCategory(targetCategory || 'All') : undefined}
               />
-              <div className="flex gap-3 overflow-x-auto pb-4 pt-1 scrollbar-none">
+              <div
+                className="flex gap-3 overflow-x-auto overflow-y-hidden pb-4 pt-1 scrollbar-none"
+                style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+              >
                 {rowContent.map((item: any, index: number) => {
                   if (style === 'seasonal_card') {
                     const collectionIds = item.collectionIds || [];

@@ -244,6 +244,9 @@ class DownloadManagerService {
       createdAt: Date.now(),
     };
 
+    // Request background download & notification permissions so downloads continue in background
+    NativeBridgeService.requestBackgroundDownloadAndNotificationPermissions();
+
     // Append to queue so episodes download in natural chronological order (Ep 1 -> Ep 2 -> Ep 3)
     this.tasks.push(newTask);
     this.saveState();
@@ -266,7 +269,10 @@ class DownloadManagerService {
         (t) => t.status === 'queued' && !this.activeTaskIds.has(t.taskId)
       );
 
-    if (!nextTask) return;
+    if (!nextTask) {
+      NativeBridgeService.setBackgroundDownloadState(false);
+      return;
+    }
 
     this.isProcessingQueue = true;
     nextTask.status = 'downloading';
@@ -421,6 +427,10 @@ class DownloadManagerService {
 
     // Lock the initial estimated bytes so the series total MB never fluctuates between 800MB and 900MB
     const lockedTaskTotalBytes = task.totalBytes > 0 ? task.totalBytes : 250 * 1024 * 1024;
+    const displayLabel = task.episodeTitle ? `${task.title} • ${task.episodeTitle}` : task.title;
+    let lastBgNotifyAt = 0;
+
+    NativeBridgeService.setBackgroundDownloadState(true, displayLabel, 1);
 
     try {
       let resolvedStreamUrl = '';
@@ -460,6 +470,15 @@ class DownloadManagerService {
               current.downloadSpeedMb =
                 Math.round((info.speedBps / (1024 * 1024)) * 10) / 10;
               this.notify();
+
+              const now = Date.now();
+              if (now - lastBgNotifyAt >= 1500) {
+                lastBgNotifyAt = now;
+                const pct = current.totalBytes > 0
+                  ? Math.round((current.bytesDownloaded / current.totalBytes) * 100)
+                  : Math.round(info.progress || 0);
+                NativeBridgeService.setBackgroundDownloadState(true, displayLabel, pct);
+              }
             },
             task.language || 'Hindi',
             lockedTaskTotalBytes,
@@ -530,6 +549,13 @@ class DownloadManagerService {
       ];
 
       this.saveState();
+
+      // Send status-bar notification when download finishes (especially useful when downloading in background)
+      NativeBridgeService.showNativeNotification(
+        `Download Complete • ${task.title}`,
+        `${task.episodeTitle ? task.episodeTitle + ' • ' : ''}${finalSizeMb} MB (${task.quality.toUpperCase()}) is ready to watch offline.`,
+        task.posterUrl
+      );
     } catch (err: any) {
       const current = this.tasks.find((t) => t.taskId === task.taskId);
       if (current && current.status !== 'paused') {

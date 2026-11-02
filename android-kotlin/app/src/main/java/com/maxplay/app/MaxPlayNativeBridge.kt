@@ -1123,6 +1123,21 @@ class MaxPlayNativeBridge(
         }
     }
 
+    @JavascriptInterface
+    fun requestBackgroundDownloadPermission(): Boolean {
+        return activity.requestBackgroundDownloadAndNotifPermission()
+    }
+
+    @JavascriptInterface
+    fun setBackgroundDownloadActive(active: Boolean, title: String, progress: Int): Boolean {
+        return try {
+            activity.updateBackgroundDownloadState(active, title, progress)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun parseHeadersJson(headersJson: String?): Map<String, String> {
         if (headersJson.isNullOrBlank()) return emptyMap()
         val map = mutableMapOf<String, String>()

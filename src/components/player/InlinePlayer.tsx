@@ -1243,7 +1243,12 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
       hlsRef.current = null;
     }
 
-    const isHls = resolvedStreamUrl.toLowerCase().includes('.m3u8');
+    const lowerResolved = resolvedStreamUrl.toLowerCase();
+    const isHls =
+      lowerResolved.includes('.m3u8') ||
+      lowerResolved.includes('m3u8') ||
+      lowerResolved.includes('master.txt') ||
+      lowerResolved.includes('urlset');
     isHlsStreamRef.current = isHls;
 
     if (isHls && Hls.isSupported()) {
@@ -1253,14 +1258,14 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
         lowLatencyMode: false,
         startFragPrefetch: true,
         backBufferLength: 30,
-        maxBufferLength: 45,
-        maxMaxBufferLength: 90,
-        maxBufferSize: 60 * 1000 * 1000,
-        fragLoadingTimeOut: 30000,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 45 * 1000 * 1000,
+        fragLoadingTimeOut: 25000,
         fragLoadingMaxRetry: 6,
-        manifestLoadingTimeOut: 20000,
+        manifestLoadingTimeOut: 15000,
         manifestLoadingMaxRetry: 4,
-        levelLoadingTimeOut: 20000,
+        levelLoadingTimeOut: 15000,
         levelLoadingMaxRetry: 4,
       });
       hlsRef.current = hls;

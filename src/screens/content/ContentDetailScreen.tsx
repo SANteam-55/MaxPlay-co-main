@@ -1629,15 +1629,26 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     setDiscoveredQualities(selectedServer === 'server2' ? s2DiscoveredQualities : s1DiscoveredQualities);
   }, [selectedServer, s1DiscoveredAudioTracks, s2DiscoveredAudioTracks, s1DiscoveredQualities, s2DiscoveredQualities]);
 
-  // Pre-warm both Server 1 and Server 2 streams in the background for instant 0ms playback & server switching
+  // Pre-warm the active server stream immediately and defer backup server pre-warming by 4s so initial video startup has 0 contention
   useEffect(() => {
-    if (primaryServerUrl) {
-      SmartStreamService.prefetchStream(primaryServerUrl);
+    const activeUrl = selectedServer === 'server2' ? (secondaryServerUrl || primaryServerUrl) : (primaryServerUrl || secondaryServerUrl);
+    const backupUrl = selectedServer === 'server2' ? primaryServerUrl : secondaryServerUrl;
+
+    if (activeUrl) {
+      SmartStreamService.prefetchStream(activeUrl);
     }
-    if (secondaryServerUrl) {
-      SmartStreamService.prefetchStream(secondaryServerUrl);
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (backupUrl && backupUrl !== activeUrl) {
+      timer = setTimeout(() => {
+        SmartStreamService.prefetchStream(backupUrl);
+      }, 4000);
     }
-  }, [primaryServerUrl, secondaryServerUrl]);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [primaryServerUrl, secondaryServerUrl, selectedServer]);
 
   const isQualityKeyString = (val?: string): boolean => {
     if (!val || typeof val !== 'string') return false;
@@ -1926,13 +1937,41 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     (secondaryServerQualityLinks ? Object.values(secondaryServerQualityLinks).find((v) => typeof v === 'string' && v.trim()) : '') ||
     '';
 
-  // Proactively probe both Server 1 and Server 2 master playlists so multi-language audio tracks and cross-server qualities (S1 / S2) appear immediately
+  // Proactively probe Server 1 and Server 2 master playlists without competing with active video startup
   useEffect(() => {
     let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
 
-    const probeUrlForServer = async (targetUrl: string, srv: 'server1' | 'server2') => {
-      if (!targetUrl) return;
+    const applyCachedMeta = (targetUrl: string, srv: 'server1' | 'server2') => {
+      if (!targetUrl) return false;
+      const meta = SmartStreamService.getCachedStreamMeta(targetUrl);
+      if (!meta) return false;
+      const setSrvQualities = srv === 'server2' ? setS2DiscoveredQualities : setS1DiscoveredQualities;
+      const setSrvAudios = srv === 'server2' ? setS2DiscoveredAudioTracks : setS1DiscoveredAudioTracks;
+      let foundAny = false;
+      if (Array.isArray(meta.audioTracks) && meta.audioTracks.length > 0) {
+        foundAny = true;
+        setSrvAudios((prev) => {
+          const next = Array.from(new Set([...prev, ...meta.audioTracks!]));
+          return next.length !== prev.length ? next : prev;
+        });
+      }
+      if (Array.isArray(meta.qualities) && meta.qualities.length > 0) {
+        foundAny = true;
+        setSrvQualities((prev) => {
+          const next = Array.from(new Set([...prev, ...meta.qualities!]));
+          return next.length !== prev.length ? next : prev;
+        });
+      }
+      return foundAny;
+    };
+
+    const probeUrlForServer = async (targetUrl: string, srv: 'server1' | 'server2', isActiveServer: boolean) => {
+      if (!targetUrl || cancelled) return;
       try {
+        if (applyCachedMeta(targetUrl, srv) && isActiveServer) {
+          return;
+        }
         let m3u8Url = targetUrl;
         const setSrvQualities = srv === 'server2' ? setS2DiscoveredQualities : setS1DiscoveredQualities;
         const setSrvAudios = srv === 'server2' ? setS2DiscoveredAudioTracks : setS1DiscoveredAudioTracks;
@@ -1942,22 +1981,12 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           if (cancelled) return;
           if (res?.streamUrl) {
             m3u8Url = res.streamUrl;
-            const meta = SmartStreamService.getCachedStreamMeta(targetUrl);
-            if (meta && Array.isArray(meta.audioTracks) && meta.audioTracks.length > 0) {
-              setSrvAudios((prev) => {
-                const next = Array.from(new Set([...prev, ...meta.audioTracks!]));
-                return next.length !== prev.length ? next : prev;
-              });
-            }
-            if (meta && Array.isArray(meta.qualities) && meta.qualities.length > 0) {
-              setSrvQualities((prev) => {
-                const next = Array.from(new Set([...prev, ...meta.qualities!]));
-                return next.length !== prev.length ? next : prev;
-              });
-            }
+            applyCachedMeta(targetUrl, srv);
           }
         }
-        if (m3u8Url && (m3u8Url.includes('.m3u8') || m3u8Url.includes('m3u8') || m3u8Url.includes('master.txt'))) {
+        // For the active server, InlinePlayer's Hls.js already parses the manifest and reports qualities/audio tracks;
+        // only probe the manifest directly for the inactive server (or if non-HLS player needed it)
+        if (!isActiveServer && m3u8Url && (m3u8Url.includes('.m3u8') || m3u8Url.includes('m3u8') || m3u8Url.includes('master.txt'))) {
           const parsed = await ClientHlsDownloader.probeMasterPlaylist(m3u8Url);
           if (cancelled || !parsed) return;
           if (parsed.audioTracks && parsed.audioTracks.length > 0) {
@@ -1982,17 +2011,29 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       } catch {}
     };
 
+    const isS1Active = selectedServer !== 'server2';
     if (s1ProbeTargetUrl) {
-      probeUrlForServer(s1ProbeTargetUrl, 'server1');
+      applyCachedMeta(s1ProbeTargetUrl, 'server1');
+      if (isS1Active) {
+        timers.push(setTimeout(() => probeUrlForServer(s1ProbeTargetUrl, 'server1', true), 1500));
+      } else {
+        timers.push(setTimeout(() => probeUrlForServer(s1ProbeTargetUrl, 'server1', false), 4200));
+      }
     }
     if (s2ProbeTargetUrl) {
-      probeUrlForServer(s2ProbeTargetUrl, 'server2');
+      applyCachedMeta(s2ProbeTargetUrl, 'server2');
+      if (!isS1Active) {
+        timers.push(setTimeout(() => probeUrlForServer(s2ProbeTargetUrl, 'server2', true), 1500));
+      } else {
+        timers.push(setTimeout(() => probeUrlForServer(s2ProbeTargetUrl, 'server2', false), 4200));
+      }
     }
 
     return () => {
       cancelled = true;
+      timers.forEach(clearTimeout);
     };
-  }, [s1ProbeTargetUrl, s2ProbeTargetUrl]);
+  }, [s1ProbeTargetUrl, s2ProbeTargetUrl, selectedServer]);
 
   // Compute cross-server qualities with [S1] / [S2] badges so both servers' qualities appear in the unified Quality drawer & selector
   const crossServerQualities = useMemo(() => {

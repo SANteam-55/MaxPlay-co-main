@@ -454,57 +454,65 @@ class InbuiltStreamScraper(
                 }
             }
 
+            val mappedOrigin = byseEmbedOriginCache[origin]
+                ?: if (host.contains("filemoon", ignoreCase = true) || host.contains("bysedikamoum", ignoreCase = true)) {
+                    "https://byseraguci.com"
+                } else {
+                    origin
+                }
+
             var discoveredEmbedOrigin = ""
             var videoTitle = ""
             var defaultLangCode = ""
 
-            try {
-                val detailsReq = Request.Builder()
-                    .url("$origin/api/videos/$code/embed/details")
-                    .header("User-Agent", DEFAULT_USER_AGENT)
-                    .header("Accept", "application/json")
-                    .header("Referer", "$origin/e/$code")
-                    .build()
+            val metaLatch = CountDownLatch(1)
+            backgroundExecutor.execute {
+                try {
+                    val detailsReq = Request.Builder()
+                        .url("$mappedOrigin/api/videos/$code/embed/details")
+                        .header("User-Agent", DEFAULT_USER_AGENT)
+                        .header("Accept", "application/json")
+                        .header("Referer", "$mappedOrigin/e/$code")
+                        .build()
 
-                okHttpClient.newCall(detailsReq).execute().use { detailsResp ->
-                    if (detailsResp.isSuccessful) {
-                        val detailsStr = detailsResp.body?.string() ?: ""
-                        if (detailsStr.isNotEmpty()) {
-                            val detailsJson = JSONObject(detailsStr)
-                            videoTitle = detailsJson.optString("title", "")
-                            val frame = detailsJson.optString("embed_frame_url", "")
-                            if (frame.startsWith("http")) {
-                                val embedUri = android.net.Uri.parse(frame)
-                                discoveredEmbedOrigin = "${embedUri.scheme ?: "https"}://${embedUri.host ?: host}"
+                    okHttpClient.newCall(detailsReq).execute().use { detailsResp ->
+                        if (detailsResp.isSuccessful) {
+                            val detailsStr = detailsResp.body?.string() ?: ""
+                            if (detailsStr.isNotEmpty()) {
+                                val detailsJson = JSONObject(detailsStr)
+                                videoTitle = detailsJson.optString("title", "")
+                                val frame = detailsJson.optString("embed_frame_url", "")
+                                if (frame.startsWith("http")) {
+                                    val embedUri = android.net.Uri.parse(frame)
+                                    discoveredEmbedOrigin = "${embedUri.scheme ?: "https"}://${embedUri.host ?: host}"
+                                }
                             }
                         }
                     }
-                }
-            } catch (_: Exception) {
-            }
-
-            try {
-                val settingsReq = Request.Builder()
-                    .url("$origin/api/videos/$code/settings")
-                    .header("User-Agent", DEFAULT_USER_AGENT)
-                    .header("Accept", "application/json")
-                    .header("Referer", "$origin/e/$code")
-                    .build()
-                okHttpClient.newCall(settingsReq).execute().use { settingsResp ->
-                    if (settingsResp.isSuccessful) {
-                        val settingsJson = JSONObject(settingsResp.body?.string() ?: "{}")
-                        defaultLangCode = settingsJson.optString("default_language", "")
+                    val settingsReq = Request.Builder()
+                        .url("$mappedOrigin/api/videos/$code/settings")
+                        .header("User-Agent", DEFAULT_USER_AGENT)
+                        .header("Accept", "application/json")
+                        .header("Referer", "$mappedOrigin/e/$code")
+                        .build()
+                    okHttpClient.newCall(settingsReq).execute().use { settingsResp ->
+                        if (settingsResp.isSuccessful) {
+                            val settingsJson = JSONObject(settingsResp.body?.string() ?: "{}")
+                            defaultLangCode = settingsJson.optString("default_language", "")
+                        }
                     }
+                } catch (_: Exception) {
+                } finally {
+                    metaLatch.countDown()
                 }
-            } catch (_: Exception) {
             }
 
-            val candidateOrigins = listOf(origin, "https://byseraguci.com", "https://f16px.com", discoveredEmbedOrigin)
+            val candidateOrigins = listOf(mappedOrigin, "https://byseraguci.com", "https://f16px.com", origin, discoveredEmbedOrigin)
                 .filter { it.isNotBlank() }
                 .distinct()
 
-            var embedOrigin = origin
-            var embedFrameUrl = "$origin/e/$code"
+            var embedOrigin = mappedOrigin
+            var embedFrameUrl = "$mappedOrigin/e/$code"
             var fingerprint: JSONObject? = null
             val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
