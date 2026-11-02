@@ -810,9 +810,10 @@ object MaxPlayOfflineVault {
                 } catch (_: Exception) {}
             }
 
-            if (bitmap != null) {
+            val finalBitmap = bitmap
+            if (finalBitmap != null) {
                 val baos = java.io.ByteArrayOutputStream()
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 84, baos)
+                finalBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 84, baos)
                 val bytes = baos.toByteArray()
                 if (bytes.isNotEmpty()) {
                     try {
