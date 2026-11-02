@@ -18,6 +18,9 @@ import {
   Play,
   Copy,
   CheckCircle2,
+  ArrowLeft,
+  Trash2,
+  Tv,
 } from 'lucide-react';
 import {
   doc,
@@ -76,7 +79,9 @@ interface DirectTransferSession {
     storageKey: string;
     videoUrl?: string;
     secondaryVideoUrl?: string;
+    isLocalPhoneVideo?: boolean;
   }>;
+  isLocalPhoneVideo?: boolean;
   status: 'waiting' | 'transferring' | 'completed';
   progress?: number;
   createdAt: number;
@@ -92,8 +97,14 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
   const [activeFilter, setActiveFilter] = useState<'moviebox' | 'local' | 'received'>('moviebox');
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferTab, setTransferTab] = useState<'send' | 'receive'>('send');
+  const [sendSourceFilter, setSendSourceFilter] = useState<'maxbox' | 'local'>('maxbox');
   const [selectedSendFileId, setSelectedSendFileId] = useState<string | null>(null);
   const [selectedSendFileIds, setSelectedSendFileIds] = useState<string[]>([]);
+  const [activeSeriesFolderPage, setActiveSeriesFolderPage] = useState<{
+    seriesTitle: string;
+    posterUrl: string;
+    episodes: DownloadedFile[];
+  } | null>(null);
 
   // Direct App-to-App Transfer States
   const [activeSendSession, setActiveSendSession] = useState<DirectTransferSession | null>(null);
@@ -245,6 +256,10 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
         setOfflinePlayingEpisodes([]);
         return true;
       }
+      if (activeSeriesFolderPage) {
+        setActiveSeriesFolderPage(null);
+        return true;
+      }
       if (showTransferModal) {
         setShowTransferModal(false);
         return true;
@@ -254,7 +269,7 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
     return () => {
       delete (window as any).__handleDownloadsScreenBack;
     };
-  }, [offlinePlayingFile, showTransferModal]);
+  }, [offlinePlayingFile, activeSeriesFolderPage, showTransferModal]);
 
   const activeDownloadingTasks = tasks.filter(
     (t) => t.status === 'downloading' || t.status === 'paused' || t.status === 'queued' || t.status === 'failed'
@@ -274,29 +289,41 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
       return `${mins}m ${remSec}s`;
     };
 
-    return deviceScannedVideos.map((vid) => {
-      const durText = formatDuration(vid.durationSec);
-      const isVert = Boolean(
-        vid.isVertical || (vid.height && vid.width && vid.height > vid.width && vid.width > 0)
-      );
-      return {
-        id: `dev_vid_${vid.id}`,
-        contentId: `dev_vid_${vid.id}`,
-        title: vid.title,
-        subtitle: `${vid.folderName || 'Phone Storage'}${durText ? ` • ${durText}` : ''} • ${vid.sizeMb} MB`,
-        posterUrl: vid.thumbnailUrl || `https://maxplay.local/device-video-thumb/${vid.id}`,
-        quality: vid.resolution || 'HD',
-        language: vid.folderName || 'Phone Video',
-        fileSizeMb: vid.sizeMb,
-        status: `${vid.sizeMb} MB • ${vid.folderName || 'Phone Storage'} • ${vid.resolution || 'HD'}`,
-        category: 'local',
-        storageKey: `dev_vid_${vid.id}`,
-        videoUrl: vid.playbackUrl,
-        isVertical: isVert,
-        hasError: false,
-        completedAt: (vid.dateModified || 0) * 1000,
-      };
-    });
+    const SUPPORTED_VIDEO_EXT_REGEX = /\.(mp4|mkv|webm|mov|m4v|3gp|avi|ts)$/i;
+    const SUPPORTED_MIME_REGEX = /^video\/(mp4|x-matroska|matroska|webm|quicktime|3gpp|mp2t|avi|x-msvideo)/i;
+
+    return deviceScannedVideos
+      .filter((vid) => {
+        if (!vid || !vid.id || !vid.playbackUrl) return false;
+        if (Number(vid.sizeMb) <= 0.05) return false;
+        if (Number(vid.durationSec) <= 0) return false;
+        const mimeOk = vid.mimeType ? SUPPORTED_MIME_REGEX.test(vid.mimeType) : true;
+        const nameOk = vid.title ? SUPPORTED_VIDEO_EXT_REGEX.test(vid.title) || mimeOk : mimeOk;
+        return nameOk;
+      })
+      .map((vid) => {
+        const durText = formatDuration(vid.durationSec);
+        const isVert = Boolean(
+          vid.isVertical || (vid.height && vid.width && vid.height > vid.width && vid.width > 0)
+        );
+        return {
+          id: `dev_vid_${vid.id}`,
+          contentId: `dev_vid_${vid.id}`,
+          title: vid.title,
+          subtitle: `${vid.folderName || 'Phone Storage'}${durText ? ` • ${durText}` : ''} • ${vid.sizeMb} MB`,
+          posterUrl: vid.thumbnailUrl || `https://maxplay.local/device-video-thumb/${vid.id}`,
+          quality: vid.resolution || 'HD',
+          language: vid.folderName || 'Phone Video',
+          fileSizeMb: vid.sizeMb,
+          status: `${vid.sizeMb} MB • ${vid.folderName || 'Phone Storage'} • ${vid.resolution || 'HD'}`,
+          category: 'local',
+          storageKey: `dev_vid_${vid.id}`,
+          videoUrl: vid.playbackUrl,
+          isVertical: isVert,
+          hasError: false,
+          completedAt: (vid.dateModified || 0) * 1000,
+        };
+      });
   }, [deviceScannedVideos]);
 
   const manualLocalFiles = useMemo(
@@ -531,8 +558,9 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
     try {
       const requestedList = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
       const latestCompleted = downloadManager.getCompletedFiles();
+      const allSendablePool = [...latestCompleted, ...scannedLocalFilesAsDownloaded];
       const validFiles = requestedList.filter((reqFile) =>
-        latestCompleted.some((f) => f.id === reqFile.id && f.category !== 'local' && !f.hasError)
+        allSendablePool.some((f) => f.id === reqFile.id && !f.hasError)
       );
 
       if (validFiles.length === 0) {
@@ -553,6 +581,7 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
       const batchItems = validFiles.map((f) => {
         const { resolvedVideoUrl, resolvedSecondaryUrl } = resolveFileTransferUrls(f);
         const epTag = f.episodeIndex !== undefined ? ` • Ep ${f.episodeIndex + 1}` : '';
+        const isLocalVid = f.category === 'local' || String(f.storageKey || '').startsWith('dev_vid_');
         return {
           contentId: f.contentId || '',
           episodeId: f.episodeId || '',
@@ -567,6 +596,7 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
           storageKey: f.storageKey || `dl_${f.id}`,
           videoUrl: resolvedVideoUrl,
           secondaryVideoUrl: resolvedSecondaryUrl,
+          isLocalPhoneVideo: isLocalVid,
         };
       });
 
@@ -947,13 +977,32 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
           Math.round((transferredBytes / (1024 * 1024)) * 10) / 10
         );
 
+        const isLocalSentVideo = Boolean(
+          (item as any).isLocalPhoneVideo ||
+            session.isLocalPhoneVideo ||
+            String(item.storageKey || '').startsWith('dev_vid_')
+        );
+
+        // If a local phone video was transferred, also save/export it to the receiver phone's public Gallery (Movies/MaxPlay)
+        if (isLocalSentVideo && NativeBridgeService.isRunningInKotlinApp()) {
+          try {
+            (window as any).MaxPlayOfflineVault?.exportOfflineVideoToGallery?.(
+              targetStorageKey,
+              item.title || 'MaxPlay_Video'
+            );
+            scanPhoneLocalVideos(false);
+          } catch {}
+        }
+
         downloadManager.addImportedCompletedFile({
           contentId: item.contentId,
           episodeId: item.episodeId,
           seasonIndex: item.seasonIndex,
           episodeIndex: item.episodeIndex,
           title: item.title,
-          subtitle: item.subtitle,
+          subtitle: isLocalSentVideo
+            ? `${item.subtitle || 'Saved to Phone Gallery'} • Gallery & MaxPlay`
+            : item.subtitle,
           posterUrl: item.posterUrl,
           quality: item.quality || '720p',
           language: item.language || 'Default',
@@ -1166,25 +1215,6 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
         <h1 className="text-2xl font-black text-white tracking-tight">Downloads</h1>
 
         <div className="flex items-center gap-2">
-          {/* Local Video Scanner / Import Quick Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveFilter('local');
-              if (NativeBridgeService.isRunningInKotlinApp()) {
-                scanPhoneLocalVideos(true);
-                triggerToast('Scanned phone storage for local videos!');
-              } else {
-                localVideoInputRef.current?.click();
-              }
-            }}
-            className="flex items-center gap-1.5 rounded-xl bg-[#141418] px-3 py-2 text-xs font-bold text-purple-300 border border-purple-500/30 hover:bg-purple-500/10 transition cursor-pointer active:scale-95"
-            title="Scan or import video from phone storage"
-          >
-            <FolderOpen className="h-3.5 w-3.5 text-purple-400" />
-            <span className="hidden xs:inline">Local Videos</span>
-          </button>
-
           {/* Direct App-to-App Transfer button (top-right) */}
           <button
             type="button"
@@ -1196,7 +1226,7 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
               setSelectedSendFileId(freshFiles[0]?.id || null);
               setShowTransferModal(true);
             }}
-            className="flex items-center gap-1.5 rounded-xl bg-[#121212] px-3 py-2 text-xs font-bold text-[#10B981] border border-[#10B981]/30 hover:bg-[#10B981]/10 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1.5 rounded-xl bg-[#121212] px-3.5 py-2 text-xs font-bold text-[#10B981] border border-[#10B981]/30 hover:bg-[#10B981]/10 transition cursor-pointer active:scale-95"
           >
             <Share2 className="h-4 w-4" />
             <span>Transfer</span>
@@ -1271,46 +1301,44 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
 
       {/* SECTION 3: DOWNLOADED (COMPLETED) */}
       <div className="mt-5 flex flex-col gap-3">
-        {/* Filter Tabs + Aligned Available Storage Pill */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 max-w-full">
-            <button
-              type="button"
-              onClick={() => setActiveFilter('moviebox')}
-              className={`shrink-0 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer ${
-                activeFilter === 'moviebox'
-                  ? 'bg-white text-black shadow-md'
-                  : 'bg-[#121212] text-[#A1A1AA] border border-[#1C1C1E]'
-              }`}
-            >
-              MovieBox ({completedFiles.filter((f) => f.category === 'moviebox' || !f.category).length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter('local')}
-              className={`shrink-0 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer ${
-                activeFilter === 'local'
-                  ? 'bg-white text-black shadow-md'
-                  : 'bg-[#121212] text-[#A1A1AA] border border-[#1C1C1E]'
-              }`}
-            >
-              Local files ({totalLocalFilesCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter('received')}
-              className={`shrink-0 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer ${
-                activeFilter === 'received'
-                  ? 'bg-white text-black shadow-md'
-                  : 'bg-[#121212] text-[#A1A1AA] border border-[#1C1C1E]'
-              }`}
-            >
-              Received ({completedFiles.filter((f) => f.category === 'received').length})
-            </button>
-          </div>
+        {/* Filter Tabs + Storage Pill Placed Right Next to Received */}
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 max-w-full">
+          <button
+            type="button"
+            onClick={() => setActiveFilter('moviebox')}
+            className={`shrink-0 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer ${
+              activeFilter === 'moviebox'
+                ? 'bg-white text-black shadow-md'
+                : 'bg-[#121212] text-[#A1A1AA] border border-[#1C1C1E]'
+            }`}
+          >
+            Maxbox ({completedFiles.filter((f) => f.category === 'moviebox' || !f.category).length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('local')}
+            className={`shrink-0 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer ${
+              activeFilter === 'local'
+                ? 'bg-white text-black shadow-md'
+                : 'bg-[#121212] text-[#A1A1AA] border border-[#1C1C1E]'
+            }`}
+          >
+            Local files ({totalLocalFilesCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('received')}
+            className={`shrink-0 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold transition cursor-pointer ${
+              activeFilter === 'received'
+                ? 'bg-white text-black shadow-md'
+                : 'bg-[#121212] text-[#A1A1AA] border border-[#1C1C1E]'
+            }`}
+          >
+            Received ({completedFiles.filter((f) => f.category === 'received').length})
+          </button>
 
-          {/* Properly Aligned Storage Indicator Badge */}
-          <div className="flex items-center gap-1.5 rounded-xl bg-[#121216] border border-white/10 px-2.5 py-1 text-[11px] font-bold text-[#A1A1AA] shrink-0 ml-auto">
+          {/* Phone Available Storage Pill Placed Directly Next to Received */}
+          <div className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#121212] border border-[#1C1C1E] px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#A1A1AA]">
             <HardDrive className="h-3.5 w-3.5 text-[#06B6D4] shrink-0" />
             <span>
               {storageInfo ? `${storageInfo.freeGb} GB Free` : '3.5 GB Free'}
@@ -1355,7 +1383,7 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
         {/* Downloaded List */}
         {groupedCompleted.totalCount > 0 ? (
           <div className="flex flex-col gap-3">
-            {/* Render Series / Anime Folders */}
+            {/* Render Series / Anime Cards (Opens Dedicated Series Episodes Page on click) */}
             {groupedCompleted.seriesList.map((series) => (
               <SeriesFolderCard
                 key={series.contentId}
@@ -1364,6 +1392,9 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
                 episodes={series.episodes}
                 onPlayEpisode={(ep) => handlePlayItem(ep, series.episodes)}
                 onDeleteEpisode={handleDeleteCompleted}
+                onOpenSeriesPage={(title, poster, eps) =>
+                  setActiveSeriesFolderPage({ seriesTitle: title, posterUrl: poster, episodes: eps })
+                }
                 onDeleteSeries={(episodes) => {
                   const ids = episodes.map((ep) => ep.id);
                   if (selectedSendFileId && ids.includes(selectedSendFileId)) {
@@ -1697,132 +1728,181 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
                   </div>
                 )}
 
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-extrabold text-white">
-                    Select Movies / Episodes to Send (
-                    {completedFiles.filter((f) => f.category !== 'local' && !f.hasError).length})
-                  </span>
-                  {completedFiles.filter((f) => f.category !== 'local' && !f.hasError).length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const allSendableIds = completedFiles
-                            .filter((f) => f.category !== 'local' && !f.hasError)
-                            .map((f) => f.id);
-                          if (selectedSendFileIds.length === allSendableIds.length) {
-                            setSelectedSendFileIds([]);
-                          } else {
-                            setSelectedSendFileIds(allSendableIds);
-                          }
-                        }}
-                        className="text-[10px] font-extrabold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg cursor-pointer"
-                      >
-                        {selectedSendFileIds.length ===
-                        completedFiles.filter((f) => f.category !== 'local' && !f.hasError).length
-                          ? 'Clear Selection'
-                          : 'Select All'}
-                      </button>
-                      {selectedSendFileIds.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const selectedObjs = completedFiles.filter((f) =>
-                              selectedSendFileIds.includes(f.id)
-                            );
-                            if (selectedObjs.length > 0) {
-                              handleStartDirectSendSession(selectedObjs);
-                            }
-                          }}
-                          className="rounded-lg bg-gradient-to-r from-[#10B981] to-[#06B6D4] px-2.5 py-1 text-[10px] font-black text-black shadow-md hover:brightness-110 active:scale-95 cursor-pointer"
-                        >
-                          Send Selected ({selectedSendFileIds.length})
-                        </button>
-                      )}
-                    </div>
-                  )}
+                {/* Source Filter inside Send Direct: Maxbox/Received vs Local Phone Videos */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSendSourceFilter('maxbox');
+                      setSelectedSendFileIds([]);
+                    }}
+                    className={`flex-1 py-1.5 px-3 rounded-xl text-[11px] font-extrabold border transition cursor-pointer ${
+                      sendSourceFilter === 'maxbox'
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                        : 'bg-[#18181D] border-white/10 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Maxbox & Received ({completedFiles.filter((f) => f.category !== 'local' && !f.hasError).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSendSourceFilter('local');
+                      setSelectedSendFileIds([]);
+                      if (NativeBridgeService.isRunningInKotlinApp()) {
+                        scanPhoneLocalVideos(true);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 px-3 rounded-xl text-[11px] font-extrabold border transition cursor-pointer ${
+                      sendSourceFilter === 'local'
+                        ? 'bg-purple-500/20 border-purple-500 text-purple-300'
+                        : 'bg-[#18181D] border-white/10 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Local Phone Videos ({totalLocalFilesCount})
+                  </button>
                 </div>
 
-                {completedFiles.filter((f) => f.category !== 'local' && !f.hasError).length > 0 ? (
-                  <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1 scrollbar-none">
-                    {completedFiles
-                      .filter((f) => f.category !== 'local' && !f.hasError)
-                      .map((file) => {
-                        const isChecked = selectedSendFileIds.includes(file.id);
-                        const isSelected = selectedSendFileId === file.id || isChecked;
-                        const isCurrentlySending =
-                          activeSendSession &&
-                          (activeSendSession.storageKey === file.storageKey ||
-                            activeSendSession.batchItems?.some(
-                              (b) => b.storageKey === file.storageKey
-                            ));
-                        const epLabel =
-                          file.episodeIndex !== undefined ? ` • Ep ${file.episodeIndex + 1}` : '';
-                        return (
-                          <div
-                            key={file.id}
-                            onClick={() => toggleSelectSendFile(file.id)}
-                            className={`flex items-center justify-between gap-2.5 rounded-xl p-2.5 border transition cursor-pointer ${
-                              isCurrentlySending
-                                ? 'bg-emerald-500/20 border-emerald-400'
-                                : isSelected
-                                ? 'bg-emerald-500/10 border-emerald-500/50'
-                                : 'bg-[#18181D] border-white/5 hover:border-white/15'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div
-                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
-                                  isChecked
-                                    ? 'bg-emerald-500 border-emerald-400 text-black'
-                                    : 'bg-black/40 border-white/25 text-transparent'
-                                }`}
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                              </div>
-                              <img
-                                src={file.posterUrl || undefined}
-                                alt={file.title}
-                                className="h-11 w-8 rounded-lg object-cover bg-black shrink-0"
-                              />
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <h4 className="text-xs font-bold text-white truncate">
-                                    {file.title}
-                                    {epLabel}
-                                  </h4>
-                                  {file.category === 'received' && (
-                                    <span className="rounded bg-cyan-500/20 px-1.5 py-0.2 text-[8px] font-black uppercase text-cyan-300 shrink-0">
-                                      Received
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-[10px] text-[#A1A1AA]">
-                                  {file.quality?.toUpperCase() || 'HD'} • {file.language || 'Default'} • {file.fileSizeMb} MB
-                                </p>
-                              </div>
-                            </div>
+                {(() => {
+                  const sendableList =
+                    sendSourceFilter === 'local'
+                      ? [...manualLocalFiles, ...scannedLocalFilesAsDownloaded]
+                      : completedFiles.filter((f) => f.category !== 'local' && !f.hasError);
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-xs font-extrabold text-white">
+                          {sendSourceFilter === 'local'
+                            ? `Select Local Phone Videos (${sendableList.length})`
+                            : `Select Maxbox Videos (${sendableList.length})`}
+                        </span>
+                        {sendableList.length > 0 && (
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStartDirectSendSession(file);
+                              onClick={() => {
+                                const allSendableIds = sendableList.map((f) => f.id);
+                                if (selectedSendFileIds.length === allSendableIds.length) {
+                                  setSelectedSendFileIds([]);
+                                } else {
+                                  setSelectedSendFileIds(allSendableIds);
+                                }
                               }}
-                              className="shrink-0 rounded-lg bg-gradient-to-r from-[#10B981] to-[#059669] px-3 py-1.5 text-[11px] font-extrabold text-black shadow-md hover:brightness-110 active:scale-95 cursor-pointer"
+                              className="text-[10px] font-extrabold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg cursor-pointer"
                             >
-                              {isCurrentlySending ? 'Active Code' : 'Send Direct'}
+                              {selectedSendFileIds.length === sendableList.length
+                                ? 'Clear Selection'
+                                : 'Select All'}
                             </button>
+                            {selectedSendFileIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const selectedObjs = sendableList.filter((f) =>
+                                    selectedSendFileIds.includes(f.id)
+                                  );
+                                  if (selectedObjs.length > 0) {
+                                    handleStartDirectSendSession(selectedObjs);
+                                  }
+                                }}
+                                className="rounded-lg bg-gradient-to-r from-[#10B981] to-[#06B6D4] px-2.5 py-1 text-[10px] font-black text-black shadow-md hover:brightness-110 active:scale-95 cursor-pointer"
+                              >
+                                Send Selected ({selectedSendFileIds.length})
+                              </button>
+                            )}
                           </div>
-                        );
-                      })}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl bg-[#18181D] p-6 text-center border border-white/5">
-                    <p className="text-xs font-bold text-[#A1A1AA]">
-                      No active MovieBox or Received files available to send.
-                    </p>
-                  </div>
-                )}
+                        )}
+                      </div>
+
+                      {sendableList.length > 0 ? (
+                        <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1 scrollbar-none">
+                          {sendableList.map((file) => {
+                            const isChecked = selectedSendFileIds.includes(file.id);
+                            const isSelected = selectedSendFileId === file.id || isChecked;
+                            const isCurrentlySending =
+                              activeSendSession &&
+                              (activeSendSession.storageKey === file.storageKey ||
+                                activeSendSession.batchItems?.some(
+                                  (b) => b.storageKey === file.storageKey
+                                ));
+                            const epLabel =
+                              file.episodeIndex !== undefined ? ` • Ep ${file.episodeIndex + 1}` : '';
+                            return (
+                              <div
+                                key={file.id}
+                                onClick={() => toggleSelectSendFile(file.id)}
+                                className={`flex items-center justify-between gap-2.5 rounded-xl p-2.5 border transition cursor-pointer ${
+                                  isCurrentlySending
+                                    ? 'bg-emerald-500/20 border-emerald-400'
+                                    : isSelected
+                                    ? 'bg-emerald-500/10 border-emerald-500/50'
+                                    : 'bg-[#18181D] border-white/5 hover:border-white/15'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div
+                                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
+                                      isChecked
+                                        ? 'bg-emerald-500 border-emerald-400 text-black'
+                                        : 'bg-black/40 border-white/25 text-transparent'
+                                    }`}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                  </div>
+                                  <img
+                                    src={file.posterUrl || undefined}
+                                    alt={file.title}
+                                    className="h-11 w-8 rounded-lg object-cover bg-black shrink-0"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <h4 className="text-xs font-bold text-white truncate">
+                                        {file.title}
+                                        {epLabel}
+                                      </h4>
+                                      {file.category === 'received' && (
+                                        <span className="rounded bg-cyan-500/20 px-1.5 py-0.2 text-[8px] font-black uppercase text-cyan-300 shrink-0">
+                                          Received
+                                        </span>
+                                      )}
+                                      {file.category === 'local' && (
+                                        <span className="rounded bg-purple-500/20 px-1.5 py-0.2 text-[8px] font-black uppercase text-purple-300 shrink-0">
+                                          Local
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-[#A1A1AA]">
+                                      {file.quality?.toUpperCase() || 'HD'} • {file.language || 'Default'} • {file.fileSizeMb} MB
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartDirectSendSession(file);
+                                  }}
+                                  className="shrink-0 rounded-lg bg-gradient-to-r from-[#10B981] to-[#059669] px-3 py-1.5 text-[11px] font-extrabold text-black shadow-md hover:brightness-110 active:scale-95 cursor-pointer"
+                                >
+                                  {isCurrentlySending ? 'Active Code' : 'Send Direct'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl bg-[#18181D] p-6 text-center border border-white/5">
+                          <p className="text-xs font-bold text-[#A1A1AA]">
+                            {sendSourceFilter === 'local'
+                              ? 'No supported local phone videos found to send.'
+                              : 'No active Maxbox or Received files available to send.'}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             ) : (
               <div className="mt-4 flex flex-col gap-3">
@@ -1949,6 +2029,140 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* DEDICATED DOWNLOADED SERIES EPISODES PAGE */}
+      {activeSeriesFolderPage && !offlinePlayingFile && (
+        <div className="fixed inset-0 z-40 flex flex-col bg-[#0A0A0C] text-white overflow-hidden select-none animate-in fade-in duration-150">
+          {/* Top Sticky Header */}
+          <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/10 bg-[#101015]/95 backdrop-blur-md shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setActiveSeriesFolderPage(null)}
+                className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white active:scale-95 transition cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-lg font-extrabold text-white truncate">
+                  {activeSeriesFolderPage.seriesTitle}
+                </h2>
+                <p className="text-[11px] text-zinc-400">
+                  {activeSeriesFolderPage.episodes.length} Downloaded{' '}
+                  {activeSeriesFolderPage.episodes.length === 1 ? 'Episode' : 'Episodes'} • Offline Ready
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Series Hero Banner + Sequential Episodes List */}
+          <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4 scrollbar-none">
+            <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[#171722] to-[#121218] p-4 border border-white/10 shadow-xl">
+              <img
+                src={activeSeriesFolderPage.posterUrl}
+                alt={activeSeriesFolderPage.seriesTitle}
+                className="h-24 w-16 rounded-xl object-cover border border-white/15 shrink-0 shadow-md"
+              />
+              <div className="flex-1 min-w-0 text-left">
+                <span className="inline-flex items-center gap-1 rounded-md bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 px-2 py-0.5 text-[10px] font-black uppercase text-[#C4B5FD]">
+                  <Tv className="h-3 w-3" />
+                  <span>Maxbox Series</span>
+                </span>
+                <h3 className="mt-1 text-base sm:text-lg font-black text-white truncate">
+                  {activeSeriesFolderPage.seriesTitle}
+                </h3>
+                <p className="mt-1 text-xs text-emerald-400 font-semibold">
+                  Tap any episode below to watch offline in full HD
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {activeSeriesFolderPage.episodes.map((ep, idx) => {
+                const epNum =
+                  ep.episodeIndex !== undefined
+                    ? ep.episodeIndex + 1
+                    : parseInt(ep.episodeId?.replace(/\D/g, '') || String(idx + 1), 10) || idx + 1;
+                const sizeLabel =
+                  ep.fileSizeMb >= 1000
+                    ? `${(ep.fileSizeMb / 1024).toFixed(1)} GB`
+                    : `${Math.round(ep.fileSizeMb)} MB`;
+
+                return (
+                  <div
+                    key={ep.id}
+                    onClick={() => handlePlayItem(ep, activeSeriesFolderPage.episodes)}
+                    className="flex items-center justify-between gap-3 rounded-2xl bg-[#14141A] hover:bg-[#1B1B24] border border-white/10 hover:border-purple-500/40 p-3.5 transition cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="relative h-14 w-24 rounded-xl overflow-hidden bg-black border border-white/10 shrink-0 flex items-center justify-center">
+                        {ep.posterUrl || activeSeriesFolderPage.posterUrl ? (
+                          <img
+                            src={ep.posterUrl || activeSeriesFolderPage.posterUrl}
+                            alt={ep.title}
+                            className="h-full w-full object-cover opacity-85 group-hover:scale-105 transition"
+                          />
+                        ) : null}
+                        <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
+                          <div className="h-8 w-8 rounded-full bg-[#8B5CF6]/90 flex items-center justify-center text-white shadow-md">
+                            <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
+                          </div>
+                        </div>
+                        <span className="absolute bottom-1 left-1.5 rounded bg-black/80 px-1.5 py-0.2 text-[9.5px] font-black text-white">
+                          EP {epNum.toString().padStart(2, '0')}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col min-w-0 text-left">
+                        <h4 className="text-sm font-extrabold text-white truncate group-hover:text-purple-300 transition">
+                          Episode {epNum.toString().padStart(2, '0')}{' '}
+                          {ep.subtitle ? `• ${ep.subtitle.split('•')[0].trim()}` : ''}
+                        </h4>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+                          {ep.quality && (
+                            <span className="rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 text-[10px] font-bold text-emerald-300">
+                              {ep.quality}
+                            </span>
+                          )}
+                          {ep.language && (
+                            <span className="rounded bg-sky-500/15 border border-sky-500/30 px-1.5 py-0.2 text-[10px] font-bold text-sky-300">
+                              {ep.language}
+                            </span>
+                          )}
+                          <span>{sizeLabel}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCompleted(ep.id);
+                        const remaining = activeSeriesFolderPage.episodes.filter(
+                          (item) => item.id !== ep.id
+                        );
+                        if (remaining.length === 0) {
+                          setActiveSeriesFolderPage(null);
+                        } else {
+                          setActiveSeriesFolderPage({
+                            ...activeSeriesFolderPage,
+                            episodes: remaining,
+                          });
+                        }
+                      }}
+                      className="p-2 rounded-xl text-zinc-500 hover:bg-red-500/20 hover:text-red-400 transition cursor-pointer shrink-0"
+                      title="Delete episode"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

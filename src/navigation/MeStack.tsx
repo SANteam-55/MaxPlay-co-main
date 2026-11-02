@@ -62,11 +62,19 @@ export const MeStack: React.FC<MeStackProps> = ({ onLogout, onDetailOpenChange }
         return [...prev, { name: 'messages' }];
       });
     };
+    const handleOpenFeedback = () => {
+      setStack((prev) => {
+        if (prev[prev.length - 1]?.name === 'feedback') return prev;
+        return [...prev, { name: 'feedback' }];
+      });
+    };
     window.addEventListener('MAXPLAY_POP_STACK_ME', handlePopStack);
     window.addEventListener('MAXPLAY_OPEN_ME_MESSAGES', handleOpenMessages);
+    window.addEventListener('MAXPLAY_OPEN_ME_FEEDBACK', handleOpenFeedback);
     return () => {
       window.removeEventListener('MAXPLAY_POP_STACK_ME', handlePopStack);
       window.removeEventListener('MAXPLAY_OPEN_ME_MESSAGES', handleOpenMessages);
+      window.removeEventListener('MAXPLAY_OPEN_ME_FEEDBACK', handleOpenFeedback);
     };
   }, []);
 

@@ -16,6 +16,7 @@ import {
   Crown,
   HelpCircle,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ContentItem } from '../../types';
 import { downloadManager } from '../../services/DownloadManager';
 import { SmartStreamService } from '../../services/smartStreamService';
@@ -30,6 +31,7 @@ interface DownloadSelectionModalProps {
   selectedServer?: 'server1' | 'server2';
   activePrimaryUrl?: string;
   activeSecondaryUrl?: string;
+  activeStreamDuration?: number;
   onClose: () => void;
   onSuccessToast?: (msg: string) => void;
 }
@@ -63,18 +65,25 @@ interface EpisodeResolvedPlan {
   isCrossServerAuto: boolean;
 }
 
-export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
-  visible,
+export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = (props) => {
+  return (
+    <AnimatePresence>
+      {props.visible && props.content && <DownloadSelectionModalInner {...props} />}
+    </AnimatePresence>
+  );
+};
+
+const DownloadSelectionModalInner: React.FC<DownloadSelectionModalProps> = ({
   content,
   initialSeasonIndex = 0,
   initialEpisodeIndex = 0,
   selectedServer = 'server1',
   activePrimaryUrl = '',
   activeSecondaryUrl = '',
+  activeStreamDuration = 0,
   onClose,
   onSuccessToast,
 }) => {
-  if (!visible || !content) return null;
 
   // Content type evaluation - Precise Movie vs Series / Anime
   const isMovie = useMemo(() => {
@@ -1597,21 +1606,67 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
 
   const [openResourceDropdown, setOpenResourceDropdown] = useState<'language' | 'season' | 'server' | null>(null);
 
-  const formatEpDuration = (rawSec?: number) => {
-    const sec = rawSec && rawSec > 60 ? rawSec : isMovie ? 7100 : 1465;
-    const mins = Math.floor(sec / 60);
-    const remSec = Math.floor(sec % 60);
+  const formatEpDuration = (rawVal?: any, epIdx?: number) => {
+    // 1. If already a formatted string like "24:15" or "1:45:20", return or parse it
+    if (typeof rawVal === 'string' && rawVal.trim().includes(':')) {
+      return rawVal.trim();
+    }
+    let parsedSec = Number(rawVal) || 0;
+    if (typeof rawVal === 'string' && !parsedSec) {
+      const hrMatch = rawVal.match(/(\d+)\s*h/i);
+      const minMatch = rawVal.match(/(\d+)\s*m/i);
+      if (hrMatch || minMatch) {
+        parsedSec = (hrMatch ? parseInt(hrMatch[1], 10) * 3600 : 0) + (minMatch ? parseInt(minMatch[1], 10) * 60 : 0);
+      }
+    }
+
+    // 2. Fallback to live probed HLS duration or active video player stream duration
+    if (parsedSec <= 10) {
+      const liveProbedDur =
+        (modalServer === 'server2'
+          ? Number(server2Meta?.duration || server1Meta?.duration)
+          : Number(server1Meta?.duration || server2Meta?.duration)) || 0;
+
+      if (isMovie) {
+        parsedSec = liveProbedDur || Number(activeStreamDuration) || Number(content.duration) || 0;
+      } else {
+        if (epIdx === undefined || epIdx === focusedEpisodeIdx) {
+          parsedSec = liveProbedDur || Number(activeStreamDuration) || Number(content.duration) || 0;
+        } else {
+          parsedSec = liveProbedDur || Number(activeStreamDuration) || Number(content.duration) || 0;
+        }
+      }
+    }
+
+    // 3. Final fallback if stream hasn't reported duration yet
+    const sec = parsedSec > 10 ? parsedSec : isMovie ? 7100 : 1440;
+    const totalSec = Math.round(sec);
+    const hrs = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const remSec = totalSec % 60;
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${remSec.toString().padStart(2, '0')}`;
+    }
     return `${mins}:${remSec.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 flex flex-col bg-black/65 backdrop-blur-[2px] animate-in fade-in duration-200"
-    >
-      <div
+    <div className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 flex flex-col justify-end overflow-hidden">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { duration: 0.16 } }}
+        exit={{ opacity: 0, transition: { duration: 0.14 } }}
+        onClick={onClose}
+        className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] bg-black/65"
+        style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+      />
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0, transition: { type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.22 } }}
+        exit={{ y: '100%', transition: { type: 'tween', ease: [0.4, 0, 1, 1], duration: 0.16 } }}
         onClick={(e) => e.stopPropagation()}
-        className="flex flex-col w-full h-full bg-[#101116] border-t border-white/10 rounded-t-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.9)] overflow-hidden animate-in slide-in-from-bottom duration-200 select-none text-left"
+        style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
+        className="relative z-10 flex flex-col w-full h-full bg-[#101116] border-t border-white/10 rounded-t-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.9)] overflow-hidden select-none text-left"
       >
         {/* TOP HEADER: "Download" on left, "X" on right */}
         <div className="flex items-center justify-between px-4 py-3.5 shrink-0">
@@ -1935,7 +1990,11 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
                 episodeResolutionPlans.map((plan) => {
                   const isSelected = selectedEpIndices.has(plan.epIndex);
                   const epObj = currentEpisodes[plan.epIndex];
-                  const durationStr = formatEpDuration(epObj?.duration);
+                  const epRawDur =
+                    epObj?.duration ||
+                    (Array.isArray(epObj?.videoLinks) && epObj.videoLinks[0]?.duration) ||
+                    (epObj as any)?.runtime;
+                  const durationStr = formatEpDuration(epRawDur, plan.epIndex);
                   const sizeStr =
                     plan.sizeMb > 0
                       ? plan.sizeMb >= 1000
@@ -2008,7 +2067,11 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
                         ? `${(q.movieSizeMb / 1024).toFixed(2)}GB`
                         : `${q.movieSizeMb.toFixed(1)}MB`
                       : '920.5MB';
-                  const durationStr = formatEpDuration(content.duration);
+                  const movieRawDur =
+                    content.duration ||
+                    (Array.isArray((content as any)?.videoLinks) && (content as any).videoLinks[0]?.duration) ||
+                    (content as any)?.runtime;
+                  const durationStr = formatEpDuration(movieRawDur);
 
                   return (
                     <button
@@ -2130,7 +2193,7 @@ export const DownloadSelectionModal: React.FC<DownloadSelectionModalProps> = ({
             </>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

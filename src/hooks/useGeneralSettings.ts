@@ -180,6 +180,7 @@ export function useGeneralSettings() {
   // The baseline version shown in Me -> Settings -> Check Update (from settings/general.appVersion or v2.5.0)
   const [installedAppVersion, setInstalledAppVersion] = useState<string>(DEFAULT_INSTALLED_APK_VERSION);
   const [generalDownloadUrl, setGeneralDownloadUrl] = useState<string>('');
+  const [shareDownloadUrlState, setShareDownloadUrlState] = useState<string>('');
 
   // Optional direct update fields from settings/update or settings/general
   const [settingsLatestVersion, setSettingsLatestVersion] = useState<string>('');
@@ -254,6 +255,10 @@ export function useGeneralSettings() {
           // `appVersion` in `settings/general` is the baseline version displayed in Me -> Settings -> Check update
           if (data.appVersion) {
             setInstalledAppVersion(formatVersionTag(String(data.appVersion)));
+          }
+          const shareLink = data.shareDownloadUrl || data.downloadUrl || data.apkDownloadUrl || data.apkUrl || '';
+          if (shareLink) {
+            setShareDownloadUrlState(String(shareLink).trim());
           }
           applyUpdateConfigFields(data, false);
         }
@@ -411,6 +416,7 @@ export function useGeneralSettings() {
     latestApkVersion,
     formattedLatestVersion: latestApkVersion ? formatVersionTag(latestApkVersion) : formatVersionTag(installedAppVersion),
     apkDownloadUrl,
+    shareDownloadUrl: shareDownloadUrlState || generalDownloadUrl || apkDownloadUrl || '',
     hasApkUpdate,
     forceUpdate: isForceUpdateRequired,
     updateTitle,

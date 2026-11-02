@@ -14,7 +14,7 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { DownloadedFile, downloadManager } from '../../services/DownloadManager';
-import { OfflinePlayer } from '../../components/player/OfflinePlayer';
+import { InlinePlayer } from '../../components/player/InlinePlayer';
 
 interface OfflineDetailScreenProps {
   initialFile: DownloadedFile;
@@ -145,15 +145,20 @@ export const OfflineDetailScreen: React.FC<OfflineDetailScreenProps> = ({
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-[#09090B] text-white overflow-hidden select-none">
-      {/* 1. TOP VIDEO PLAYER SECTION (16:9 Responsive Aspect Ratio) */}
+      {/* 1. TOP VIDEO PLAYER SECTION (Upgraded to Full InlinePlayer with all gestures, speed capsule & controls) */}
       <div className="w-full bg-black shrink-0 relative z-30 shadow-2xl">
         <div className="w-full max-w-5xl mx-auto aspect-video max-h-[48vh] sm:max-h-[55vh]">
-          <OfflinePlayer
-            file={currentFile}
-            blobUrl={currentBlobUrl}
+          <InlinePlayer
             title={playerTitle}
+            posterUrl={currentFile.posterUrl}
+            videoUrl={currentBlobUrl || currentFile.videoUrl || ''}
+            availableLanguages={currentFile.language ? [currentFile.language] : ['Default']}
+            activeLanguage={currentFile.language || 'Default'}
+            activeQuality={currentFile.quality || 'auto'}
             onBack={onBack}
-            onNext={hasNextEpisode ? handleNextEpisode : undefined}
+            hasNextEpisode={hasNextEpisode}
+            onNextEpisode={hasNextEpisode ? handleNextEpisode : undefined}
+            streamKey={`offline_${currentFile.id}_${currentFile.storageKey || ''}`}
           />
         </div>
       </div>

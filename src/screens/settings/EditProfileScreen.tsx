@@ -12,22 +12,48 @@ import {
   Calendar, 
   Info,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ChevronRight,
+  X,
+  Film
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { useAuth } from '../../hooks/useAuth';
 
 interface EditProfileScreenProps {
   onBack: () => void;
 }
 
-// Preset popular avatars for quick selection
-const PRESET_AVATARS = [
-  { id: 'av-1', name: 'Gojo Satoru', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80' },
-  { id: 'av-2', name: 'Cyberpunk Red', url: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=200&auto=format&fit=crop&q=80' },
-  { id: 'av-3', name: 'Neon Samurai', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80' },
-  { id: 'av-4', name: 'Cinema Buff', url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=200&auto=format&fit=crop&q=80' },
-  { id: 'av-5', name: 'Anime Girl', url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80' },
-  { id: 'av-6', name: 'Retro Gamer', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80' },
+export interface AvatarItem {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface AvatarGroup {
+  id: string;
+  title: string;
+  order: number;
+  avatars: AvatarItem[];
+}
+
+// Default categorized preset avatar groups (used when Admin has not customized groups yet)
+const DEFAULT_AVATAR_GROUPS: AvatarGroup[] = [
+  {
+    id: 'grp-1',
+    title: 'Jujutsu Kaisen & Anime Legends',
+    order: 1,
+    avatars: [
+      { id: 'av-1', name: 'Gojo Satoru', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80' },
+      { id: 'av-2', name: 'Cyberpunk Red', url: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=200&auto=format&fit=crop&q=80' },
+      { id: 'av-3', name: 'Neon Samurai', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80' },
+      { id: 'av-4', name: 'Cinema Buff', url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=200&auto=format&fit=crop&q=80' },
+      { id: 'av-5', name: 'Anime Girl', url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80' },
+      { id: 'av-6', name: 'Retro Gamer', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80' },
+    ],
+  },
 ];
 
 const BIO_TAG_SUGGESTIONS = [
@@ -55,6 +81,41 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
   const [isSaved, setIsSaved] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [avatarGroups, setAvatarGroups] = useState<AvatarGroup[]>(DEFAULT_AVATAR_GROUPS);
+  const [showMoreAvatarsModal, setShowMoreAvatarsModal] = useState(false);
+
+  // Subscribe to Admin-configured Preset Avatar Groups in Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'settings', 'avatar_presets'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (Array.isArray(data?.groups) && data.groups.length > 0) {
+            const validGroups = data.groups
+              .filter((g: any) => g && Array.isArray(g.avatars) && g.avatars.length > 0)
+              .map((g: any, idx: number) => ({
+                id: g.id || `grp-${idx + 1}`,
+                title: g.title || `Collection #${idx + 1}`,
+                order: typeof g.order === 'number' ? g.order : idx + 1,
+                avatars: g.avatars.filter((a: any) => a && a.url),
+              }))
+              .filter((g: AvatarGroup) => g.avatars.length > 0)
+              .sort((a: AvatarGroup, b: AvatarGroup) => a.order - b.order);
+            if (validGroups.length > 0) {
+              setAvatarGroups(validGroups);
+              return;
+            }
+          }
+        }
+        setAvatarGroups(DEFAULT_AVATAR_GROUPS);
+      },
+      () => {
+        setAvatarGroups(DEFAULT_AVATAR_GROUPS);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Sync state if user changes
   useEffect(() => {
@@ -313,16 +374,26 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
             )}
           </div>
 
-          {/* PRESET AVATARS CAROUSEL */}
+          {/* PRESET AVATARS CAROUSEL (#1 Featured Collection + More Button) */}
           <div className="mt-5 w-full pt-4 border-t border-[#27272A]/70">
             <div className="flex items-center justify-between mb-2.5">
-              <span className="text-[11px] font-bold text-[#A1A1AA] flex items-center gap-1">
-                <Sparkles className="h-3 w-3 text-[#F59E0B]" />
-                <span>Or Choose Preset Avatar</span>
-              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Sparkles className="h-3.5 w-3.5 text-[#A78BFA] shrink-0" />
+                <span className="text-[11.5px] font-extrabold text-white tracking-wide truncate">
+                  {avatarGroups[0]?.title || 'Iconic Character Avatars'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMoreAvatarsModal(true)}
+                className="flex items-center gap-0.5 text-[11px] font-bold text-[#A78BFA] hover:text-white bg-[#8B5CF6]/15 hover:bg-[#8B5CF6]/25 border border-[#8B5CF6]/30 px-2.5 py-1 rounded-full transition active:scale-95 cursor-pointer shrink-0"
+              >
+                <span>More</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
             <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
-              {PRESET_AVATARS.map((avatar) => (
+              {(avatarGroups[0]?.avatars || []).map((avatar) => (
                 <button
                   key={avatar.id}
                   type="button"
@@ -330,10 +401,10 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
                     setPhotoURL(avatar.url);
                     showToast(`Selected ${avatar.name} avatar!`);
                   }}
-                  className={`relative flex-shrink-0 h-11 w-11 rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
+                  className={`relative flex-shrink-0 h-12 w-12 rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
                     photoURL === avatar.url
                       ? 'border-[#06B6D4] ring-2 ring-[#06B6D4]/40 scale-105'
-                      : 'border-transparent opacity-75 hover:opacity-100 hover:scale-105'
+                      : 'border-white/15 opacity-85 hover:opacity-100 hover:scale-105'
                   }`}
                   title={avatar.name}
                 >
@@ -426,10 +497,10 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
               <button
                 type="button"
                 onClick={() => setGender('Other')}
-                className={`flex items-center justify-center gap-1 rounded-2xl py-2.5 text-xs font-bold transition cursor-pointer border ${
+                className={`flex items-center justify-center gap-1 rounded-2xl py-2.5 text-xs font-bold transition cursor-pointer ${
                   gender === 'Other'
-                    ? 'bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6] shadow-sm'
-                    : 'bg-[#141416] text-[#71717A] border-[#27272A] hover:text-white'
+                    ? 'bg-transparent text-white border-2 border-white shadow-sm'
+                    : 'bg-[#141416] text-[#71717A] border border-[#27272A] hover:text-white'
                 }`}
               >
                 <span>⚧ Other</span>
@@ -557,6 +628,101 @@ export const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ onBack }) 
           )}
         </button>
       </form>
+
+      {/* CATEGORIZED PRESET AVATARS BOTTOM-SHEET MODAL */}
+      <AnimatePresence>
+        {showMoreAvatarsModal && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.16 } }}
+              exit={{ opacity: 0, transition: { duration: 0.14 } }}
+              onClick={() => setShowMoreAvatarsModal(false)}
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0, transition: { type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.22 } }}
+              exit={{ y: '100%', transition: { type: 'tween', ease: [0.4, 0, 1, 1], duration: 0.16 } }}
+              className="relative z-10 w-full max-w-xl max-h-[82vh] flex flex-col rounded-t-3xl bg-[#121318] border-t border-white/15 shadow-2xl overflow-hidden"
+            >
+              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mt-3 mb-1 shrink-0" />
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[#A78BFA]" />
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white">Choose Character Avatar</h3>
+                    <p className="text-[11px] text-zinc-400">Official Movie & Series Avatar Collections</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMoreAvatarsModal(false)}
+                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-none">
+                {avatarGroups.map((group, gIdx) => (
+                  <div key={group.id || gIdx} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 text-[10px] font-black text-[#A78BFA]">
+                        #{gIdx + 1}
+                      </span>
+                      <Film className="h-3.5 w-3.5 text-[#06B6D4]" />
+                      <h4 className="text-xs font-extrabold text-white tracking-wide uppercase">
+                        {group.title}
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
+                      {group.avatars.map((avatar) => {
+                        const isSelected = photoURL === avatar.url;
+                        return (
+                          <button
+                            key={avatar.id}
+                            type="button"
+                            onClick={() => {
+                              setPhotoURL(avatar.url);
+                              showToast(`Selected ${avatar.name}!`);
+                              setShowMoreAvatarsModal(false);
+                            }}
+                            className="flex flex-col items-center gap-1.5 group cursor-pointer"
+                          >
+                            <div
+                              className={`relative w-16 h-16 rounded-full overflow-hidden border-2 transition-all ${
+                                isSelected
+                                  ? 'border-[#06B6D4] ring-3 ring-[#06B6D4]/35 scale-105'
+                                  : 'border-white/15 group-hover:border-[#8B5CF6] group-hover:scale-105'
+                              }`}
+                            >
+                              <img
+                                src={avatar.url}
+                                alt={avatar.name}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                  <Check className="w-5 h-5 text-[#06B6D4] stroke-[3]" />
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-[10.5px] font-semibold text-zinc-300 group-hover:text-white text-center line-clamp-1 w-full">
+                              {avatar.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* FLOATING TOAST NOTIFICATION */}
       {toastMessage && (

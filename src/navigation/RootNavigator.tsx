@@ -285,6 +285,18 @@ export const RootNavigator: React.FC = () => {
       const cleanUrl = window.location.pathname + window.location.search;
       window.history.pushState({ tab: activeTab, isDetailOpen: isCurrentDetailOpen }, '', cleanUrl);
     } catch (_) {}
+
+    const handleOpenFeedbackScreen = () => {
+      setActiveTabState('me');
+      localStorage.setItem('MAXPLAY_PWA_LAST_TAB', 'me');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('MAXPLAY_OPEN_ME_FEEDBACK'));
+      }, 40);
+    };
+    window.addEventListener('MAXPLAY_OPEN_FEEDBACK_SCREEN', handleOpenFeedbackScreen);
+    return () => {
+      window.removeEventListener('MAXPLAY_OPEN_FEEDBACK_SCREEN', handleOpenFeedbackScreen);
+    };
   }, []);
 
   // Handle Detail Open changes and push history state without hash jump
@@ -345,8 +357,23 @@ export const RootNavigator: React.FC = () => {
         return 'HANDLED';
       }
 
-      // 3. If a detail modal or sub-screen (e.g., Me > Settings, Me > Messages, ContentDetail) is open on active tab, pop it back to parent tab!
+      // 3. If a detail modal or sub-screen (e.g., Me > Settings, Me > Messages, ContentDetail) is open on active tab:
+      //    If Auto-activate Miniplayer is enabled and a video is actively playing, enter Native PiP mode instead of closing!
       if (isCurrentDetailOpen) {
+        const autoMiniEnabled = localStorage.getItem('maxplay_auto_miniplayer') !== 'false';
+        const activeState = (window as any).__maxplayActivePlaybackState;
+        if (
+          autoMiniEnabled &&
+          activeState?.isPlaying &&
+          typeof (window as any).__enterMaxPlayPipOnBack === 'function' &&
+          (window as any).__enterMaxPlayPipOnBack()
+        ) {
+          try {
+            window.history.pushState({ tab: activeTab, isDetailOpen: true }, '', cleanUrl);
+          } catch {}
+          return 'HANDLED';
+        }
+
         const eventName = `MAXPLAY_POP_STACK_${activeTab.toUpperCase()}`;
         window.dispatchEvent(new CustomEvent(eventName));
         try {

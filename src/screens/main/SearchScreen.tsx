@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Mic, Flame, Trash2, X, Play, Star } from 'lucide-react';
+import { ArrowLeft, Mic, Flame, Trash2, X, Play, Star, Sparkles } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { SearchBar } from '../../components/common/SearchBar';
 import { SectionHeader } from '../../components/common/SectionHeader';
 import { RankBadge } from '../../components/common/RankBadge';
@@ -34,10 +35,13 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   };
   const [query, setQuery] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [showVoiceSheet, setShowVoiceSheet] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceStatusText, setVoiceStatusText] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeHotTab, setActiveHotTab] = useState<'movies' | 'series' | 'short_tv' | 'music'>('movies');
+  const [hotSlideDirection, setHotSlideDirection] = useState<number>(1);
   const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'movie_series' | 'anime'>('all');
   const [searchConfig, setSearchConfig] = useState<{ everyoneSearching: string[]; popularSearches: string[] }>(() => {
     try {
@@ -89,12 +93,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
       setIsListening(false);
       const cleaned = (spokenText || '').trim();
       if (cleaned) {
+        setVoiceTranscript(cleaned);
         setQuery(cleaned);
         saveRecentSearch(cleaned);
-        setVoiceStatusText(null);
+        setVoiceStatusText('Matched! Showing results...');
+        setTimeout(() => {
+          setShowVoiceSheet(false);
+          setVoiceStatusText(null);
+        }, 420);
       } else {
         setVoiceStatusText('Could not hear clearly. Tap mic to try again.');
-        setTimeout(() => setVoiceStatusText(null), 2500);
       }
     };
     return () => {
@@ -106,47 +114,30 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
     };
   }, [recentSearches]);
 
-  const handleVoiceSearchToggle = () => {
-    if (isListening) {
-      setIsListening(false);
-      setVoiceStatusText(null);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-      }
-      return;
+  const stopVoiceSession = () => {
+    setIsListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
     }
+  };
 
-    const handleSpokenResult = (spokenText: string) => {
-      setIsListening(false);
-      const cleaned = (spokenText || '').trim();
-      if (cleaned) {
-        setQuery(cleaned);
-        saveRecentSearch(cleaned);
-        setVoiceStatusText(null);
-      } else {
-        setVoiceStatusText('Could not hear clearly. Tap mic to try again.');
-        setTimeout(() => setVoiceStatusText(null), 2500);
-      }
-    };
-
-    // 1. Priority #1 in Android APK: Launch Native Android Speech Recognizer immediately
-    if (NativeBridgeService.isRunningInKotlinApp()) {
-      const started = NativeBridgeService.startNativeVoiceRecognition(handleSpokenResult);
-      if (started) {
-        setIsListening(true);
-        setVoiceStatusText('Listening... Speak now');
-        return;
-      }
-    }
+  const startVoiceRecognitionEngine = () => {
+    setVoiceTranscript('');
+    setVoiceStatusText('Listening... Speak a movie, series, or anime title');
 
     const SpeechRecognitionAPI =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    // 2. Web Browser Speech Recognition API
+    // 1. Prefer Web Speech Recognition inside our custom MaxPlay Bottom Sheet so OS popup doesn't cover our custom UI
     if (SpeechRecognitionAPI) {
       try {
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.stop();
+          } catch {}
+        }
         const recognition = new SpeechRecognitionAPI();
         recognitionRef.current = recognition;
         recognition.continuous = false;
@@ -165,9 +156,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
           }
           const cleaned = transcript.trim();
           if (cleaned) {
+            setVoiceTranscript(cleaned);
             setQuery(cleaned);
             if (event.results[event.results.length - 1]?.isFinal) {
               saveRecentSearch(cleaned);
+              setIsListening(false);
+              setVoiceStatusText('Found! Searching now...');
+              setTimeout(() => {
+                setShowVoiceSheet(false);
+                setVoiceStatusText(null);
+              }, 450);
             }
           }
         };
@@ -175,20 +173,20 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
         recognition.onerror = () => {
           setIsListening(false);
           if (NativeBridgeService.isRunningInKotlinApp()) {
-            const started = NativeBridgeService.startNativeVoiceRecognition(handleSpokenResult);
+            const started = NativeBridgeService.startNativeVoiceRecognition((spokenText: string) => {
+              if (window.__onMaxPlayVoiceResult) window.__onMaxPlayVoiceResult(spokenText);
+            });
             if (started) {
               setIsListening(true);
               setVoiceStatusText('Listening... Speak now');
               return;
             }
           }
-          setVoiceStatusText('Microphone permission required for voice search');
-          setTimeout(() => setVoiceStatusText(null), 2500);
+          setVoiceStatusText('Tap the microphone below to speak again');
         };
 
         recognition.onend = () => {
           setIsListening(false);
-          setVoiceStatusText(null);
         };
 
         recognition.start();
@@ -196,8 +194,25 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
       } catch {}
     }
 
-    setVoiceStatusText('Voice search is not supported on this browser');
-    setTimeout(() => setVoiceStatusText(null), 2500);
+    // 2. Fallback to Native Android Speech Recognizer
+    if (NativeBridgeService.isRunningInKotlinApp()) {
+      const started = NativeBridgeService.startNativeVoiceRecognition((spokenText: string) => {
+        if (window.__onMaxPlayVoiceResult) window.__onMaxPlayVoiceResult(spokenText);
+      });
+      if (started) {
+        setIsListening(true);
+        setVoiceStatusText('Listening... Speak now');
+        return;
+      }
+    }
+
+    setIsListening(false);
+    setVoiceStatusText('Tap a trending voice suggestion below or speak clearly');
+  };
+
+  const handleVoiceSearchToggle = () => {
+    setShowVoiceSheet(true);
+    startVoiceRecognitionEngine();
   };
 
   const removeRecentItem = (term: string) => {
@@ -246,19 +261,27 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
     }
   };
 
+  const switchHotTabWithDirection = (nextTabId: 'movies' | 'series' | 'short_tv' | 'music') => {
+    if (nextTabId === activeHotTab) return;
+    const curIdx = HOT_TABS.findIndex((t) => t.id === activeHotTab);
+    const nextIdx = HOT_TABS.findIndex((t) => t.id === nextTabId);
+    setHotSlideDirection(nextIdx > curIdx ? 1 : -1);
+    setActiveHotTab(nextTabId);
+  };
+
   const handleHotTouchEnd = (e: React.TouchEvent) => {
     if (!hotSwipeStartRef.current || e.changedTouches.length === 0) return;
     const dx = e.changedTouches[0].clientX - hotSwipeStartRef.current.x;
     const dy = e.changedTouches[0].clientY - hotSwipeStartRef.current.y;
     hotSwipeStartRef.current = null;
 
-    // Trigger horizontal tab switch if horizontal swipe > 45px and dominates vertical scroll
-    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+    // Trigger horizontal tab switch if horizontal swipe > 40px and dominates vertical scroll
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.25) {
       const currentIdx = HOT_TABS.findIndex((t) => t.id === activeHotTab);
       if (dx < 0 && currentIdx < HOT_TABS.length - 1) {
-        setActiveHotTab(HOT_TABS[currentIdx + 1].id);
+        switchHotTabWithDirection(HOT_TABS[currentIdx + 1].id);
       } else if (dx > 0 && currentIdx > 0) {
-        setActiveHotTab(HOT_TABS[currentIdx - 1].id);
+        switchHotTabWithDirection(HOT_TABS[currentIdx - 1].id);
       }
     }
   };
@@ -502,7 +525,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setActiveHotTab(tab.id)}
+                      onClick={() => switchHotTabWithDirection(tab.id)}
                       className={`relative py-1 text-xs font-bold whitespace-nowrap transition cursor-pointer ${
                         isActive
                           ? 'text-white'
@@ -511,7 +534,11 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                     >
                       {tab.label}
                       {isActive && (
-                        <span className="absolute -bottom-[11px] left-0 right-0 h-[2.5px] rounded-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] shadow-[0_0_8px_rgba(139,92,246,0.8)]" />
+                        <motion.span
+                          layoutId="searchHotTabUnderline"
+                          transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.22 }}
+                          className="absolute -bottom-[11px] left-0 right-0 h-[2.5px] rounded-full bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] shadow-[0_0_8px_rgba(139,92,246,0.8)]"
+                        />
                       )}
                     </button>
                   );
@@ -519,70 +546,218 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
               </div>
             </div>
 
-            {/* Hot Items List */}
-            <div className="relative z-10 mt-3.5 flex flex-col gap-2.5">
+            {/* Hot Items List with 60fps Directional Slide Animation */}
+            <div className="relative z-10 mt-3.5 flex flex-col gap-2.5 overflow-hidden">
               {/* NATIVE BANNER AD */}
               <NativeBanner />
 
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
-                    <LoadingSkeleton width={24} height={24} radius="6px" />
-                    <LoadingSkeleton width={52} height={70} radius="8px" className="shrink-0" />
-                    <div className="flex-1 flex flex-col gap-1.5">
-                      <LoadingSkeleton width="70%" height={14} radius="4px" />
-                      <LoadingSkeleton width="50%" height={12} radius="4px" />
-                      <LoadingSkeleton width="40%" height={10} radius="4px" />
-                    </div>
-                  </div>
-                ))
-              ) : hotListItems.map((item, index) => (
-                <div
-                  key={`${item.id}-${index}`}
-                  onClick={() => handleContentClick(item)}
-                  className="group flex cursor-pointer items-center justify-between rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-purple-500/30 p-2.5 transition-all duration-200 shadow-sm active:scale-[0.99]"
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={activeHotTab}
+                  initial={{ opacity: 0, x: hotSlideDirection * 42 }}
+                  animate={{
+                    opacity: 1,
+                    x: 0,
+                    transition: { type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.2 },
+                  }}
+                  exit={{
+                    opacity: 0,
+                    x: hotSlideDirection * -32,
+                    transition: { type: 'tween', ease: [0.4, 0, 1, 1], duration: 0.12 },
+                  }}
+                  style={{ willChange: 'transform, opacity', transform: 'translate3d(0,0,0)' }}
+                  className="flex flex-col gap-2.5"
                 >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    {/* Rank Badge */}
-                    <RankBadge rank={item.searchHotPosition || index + 1} />
-
-                    {/* Thumbnail */}
-                    <div className="relative h-[70px] w-[52px] flex-shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#121216] shadow-md">
-                      <img
-                        src={item.posterUrl || undefined}
-                        alt={item.title}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                    </div>
-
-                    {/* Meta info */}
-                    <div className="flex flex-col text-left overflow-hidden">
-                      <h4 className="line-clamp-1 text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
-                        {item.title}
-                      </h4>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-[#9CA3AF]">
-                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                        <span className="text-amber-400 font-bold">{item.rating}</span>
-                        <span>•</span>
-                        <span>{item.year}</span>
-                        <span>•</span>
-                        <span className="truncate">{item.country}</span>
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/5 p-2.5">
+                        <LoadingSkeleton width={24} height={24} radius="6px" />
+                        <LoadingSkeleton width={52} height={70} radius="8px" className="shrink-0" />
+                        <div className="flex-1 flex flex-col gap-1.5">
+                          <LoadingSkeleton width="70%" height={14} radius="4px" />
+                          <LoadingSkeleton width="50%" height={12} radius="4px" />
+                          <LoadingSkeleton width="40%" height={10} radius="4px" />
+                        </div>
                       </div>
-                      <p className="mt-0.5 line-clamp-1 text-[11px] text-[#A1A1AA]">
-                        {item.genres?.join(' • ')}
-                      </p>
-                    </div>
-                  </div>
+                    ))
+                  ) : hotListItems.map((item, index) => (
+                    <div
+                      key={`${item.id}-${index}`}
+                      onClick={() => handleContentClick(item)}
+                      className="group flex cursor-pointer items-center justify-between rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-purple-500/30 p-2.5 transition-all duration-200 shadow-sm active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        {/* Rank Badge */}
+                        <RankBadge rank={item.searchHotPosition || index + 1} />
 
-                  <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/5 border border-white/10 text-[#A1A1AA] group-hover:bg-gradient-to-r group-hover:from-[#A855F7] group-hover:to-[#6366F1] group-hover:text-white group-hover:border-transparent transition-all">
-                    <Play className="h-4 w-4 fill-current ml-0.5" />
-                  </div>
-                </div>
-              ))}
+                        {/* Thumbnail */}
+                        <div className="relative h-[70px] w-[52px] flex-shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#121216] shadow-md">
+                          <img
+                            src={item.posterUrl || undefined}
+                            alt={item.title}
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        </div>
+
+                        {/* Meta info */}
+                        <div className="flex flex-col text-left overflow-hidden">
+                          <h4 className="line-clamp-1 text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
+                            {item.title}
+                          </h4>
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-[#9CA3AF]">
+                            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                            <span className="text-amber-400 font-bold">{item.rating}</span>
+                            <span>•</span>
+                            <span>{item.year}</span>
+                            <span>•</span>
+                            <span className="truncate">{item.country}</span>
+                          </div>
+                          <p className="mt-0.5 line-clamp-1 text-[11px] text-[#A1A1AA]">
+                            {item.genres?.join(' • ')}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/5 border border-white/10 text-[#A1A1AA] group-hover:bg-gradient-to-r group-hover:from-[#A855F7] group-hover:to-[#6366F1] group-hover:text-white group-hover:border-transparent transition-all">
+                        <Play className="h-4 w-4 fill-current ml-0.5" />
+                      </div>
+                    </div>
+                  ))}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
         </div>
       )}
+
+      {/* CUSTOM MAXPLAY BOTTOM-SHEET VOICE SEARCH PANEL */}
+      <AnimatePresence>
+        {showVoiceSheet && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.16 } }}
+              exit={{ opacity: 0, transition: { duration: 0.14 } }}
+              onClick={() => {
+                stopVoiceSession();
+                setShowVoiceSheet(false);
+              }}
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0, transition: { type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.22 } }}
+              exit={{ y: '100%', transition: { type: 'tween', ease: [0.4, 0, 1, 1], duration: 0.16 } }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative z-10 w-full max-w-lg rounded-t-3xl bg-gradient-to-b from-[#171722] to-[#0E0E14] border-t border-white/15 p-6 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.9)] overflow-hidden"
+            >
+              {/* Top Drag Handle */}
+              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#A78BFA]" />
+                  <span className="text-sm font-extrabold text-white tracking-tight">
+                    MaxPlay Voice Search
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopVoiceSession();
+                    setShowVoiceSheet(false);
+                  }}
+                  className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Animated Custom Microphone Orb & Wave Rings */}
+              <div className="my-7 flex flex-col items-center justify-center">
+                <div className="relative flex items-center justify-center">
+                  {isListening && (
+                    <>
+                      <span className="absolute h-28 w-28 rounded-full bg-[#8B5CF6]/20 animate-ping" />
+                      <span className="absolute h-24 w-24 rounded-full bg-[#06B6D4]/20 animate-pulse" />
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isListening) {
+                        stopVoiceSession();
+                      } else {
+                        startVoiceRecognitionEngine();
+                      }
+                    }}
+                    className={`relative z-10 flex h-20 w-20 items-center justify-center rounded-full transition-all cursor-pointer shadow-2xl ${
+                      isListening
+                        ? 'bg-gradient-to-tr from-[#7C3AED] via-[#8B5CF6] to-[#06B6D4] text-white scale-105 ring-4 ring-[#8B5CF6]/40'
+                        : 'bg-[#222230] text-purple-300 border border-purple-500/40 hover:bg-[#2B2B3C]'
+                    }`}
+                  >
+                    <Mic className="h-8 w-8 stroke-[2.2]" />
+                  </button>
+                </div>
+
+                {/* Live Sound Wave Equalizer Bars */}
+                <div className="mt-5 flex items-center justify-center gap-1.5 h-5">
+                  {[0, 1, 2, 3, 4, 5, 6].map((bar) => (
+                    <span
+                      key={bar}
+                      className={`w-1 rounded-full transition-all duration-200 ${
+                        isListening
+                          ? 'bg-gradient-to-t from-[#8B5CF6] to-[#06B6D4] animate-pulse h-4'
+                          : 'bg-white/15 h-1.5'
+                      }`}
+                      style={{
+                        animationDelay: `${bar * 90}ms`,
+                        height: isListening ? `${10 + ((bar * 7) % 14)}px` : '6px',
+                      }}
+                    />
+                  ))}
+                </div>
+
+                {/* Live Transcript / Status */}
+                <p className="mt-3 text-center text-sm font-bold text-white min-h-[22px] px-4">
+                  {voiceTranscript ? `"${voiceTranscript}"` : voiceStatusText || 'Tap the microphone and speak'}
+                </p>
+                <span className="mt-1 text-[11px] text-zinc-400">
+                  {isListening ? 'Listening for movie, anime, or series name...' : 'Tap microphone to speak again'}
+                </span>
+              </div>
+
+              {/* Quick Voice Suggestions */}
+              {topFiveTrendingPills.length > 0 && (
+                <div className="pt-3 border-t border-white/10">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                    Try saying
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {topFiveTrendingPills.slice(0, 4).map((term) => (
+                      <button
+                        key={term}
+                        type="button"
+                        onClick={() => {
+                          stopVoiceSession();
+                          setQuery(term);
+                          saveRecentSearch(term);
+                          setShowVoiceSheet(false);
+                        }}
+                        className="rounded-full bg-white/5 hover:bg-[#8B5CF6]/25 border border-white/10 hover:border-[#8B5CF6]/40 px-3 py-1 text-xs font-semibold text-zinc-200 transition cursor-pointer"
+                      >
+                        &ldquo;{term}&rdquo;
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

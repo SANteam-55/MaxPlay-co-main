@@ -824,14 +824,15 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
     const hls = hlsRef.current;
     if (hls && isHlsStreamRef.current && hls.levels && hls.levels.length > 0) {
       if (activeQuality.toLowerCase() === 'auto') {
-        hls.currentLevel = -1;
+        hls.loadLevel = -1;
         hls.nextLevel = -1;
+        hls.currentLevel = -1;
       } else {
         const levelIdx = findMatchingHlsLevelIndex(hls.levels, activeQuality);
         if (levelIdx !== -1 && hls.currentLevel !== levelIdx) {
+          hls.loadLevel = levelIdx;
           hls.nextLevel = levelIdx;
           hls.currentLevel = levelIdx;
-          hls.loadLevel = levelIdx;
         }
       }
     }
@@ -1049,31 +1050,72 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
   const networkStruggleCountRef = useRef<number>(0);
   const isInitialSeekDoneRef = useRef<boolean>(initialTime <= 0);
 
-  // Smart Network Auto-Downgrade helper: steps down to the next available weaker quality when internet struggles
+  // Expose helper to enter Native Android PiP or Web PiP when pressing Back on Details Screen
+  useEffect(() => {
+    const enterPipOnBack = (): boolean => {
+      const video = videoRef.current;
+      const activelyPlaying = Boolean(
+        resolvedStreamUrl && (isPlaying || hasStarted || (video && !video.paused && video.currentTime > 0))
+      );
+      if (!activelyPlaying) return false;
+
+      if (NativeBridgeService.isNativeAndroid()) {
+        const entered = NativeBridgeService.enterNativePipMode();
+        if (entered) {
+          setIsInNativePip(true);
+          setShowControls(false);
+          setActiveMenu(null);
+          return true;
+        }
+      }
+
+      if (video && typeof (video as any).requestPictureInPicture === 'function' && !(document as any).pictureInPictureElement) {
+        (video as any).requestPictureInPicture().catch(() => {});
+        return true;
+      }
+      return false;
+    };
+    (window as any).__enterMaxPlayPipOnBack = enterPipOnBack;
+    return () => {
+      if ((window as any).__enterMaxPlayPipOnBack === enterPipOnBack) {
+        delete (window as any).__enterMaxPlayPipOnBack;
+      }
+    };
+  }, [resolvedStreamUrl, isPlaying, hasStarted]);
+
+  // Smart Network Auto-Downgrade helper: ONLY steps down when user has selected 'auto' (Auto Smart).
+  // When user manually selects a specific quality (e.g. 1080p, 720p, 480p), NEVER auto-switch quality!
   const tryStepDownToWeakerQuality = useCallback((): boolean => {
+    if (currentQuality.toLowerCase() !== 'auto') {
+      return false;
+    }
+
+    // If HLS stream with internal levels is active in Auto mode, let HLS ABR drop to lowest/next level smoothly
+    if (hlsRef.current && hlsRef.current.levels && hlsRef.current.levels.length > 1) {
+      const curLvl = hlsRef.current.currentLevel;
+      if (curLvl > 0) {
+        hlsRef.current.nextLoadLevel = Math.max(0, curLvl - 1);
+      }
+      hlsRef.current.loadLevel = -1;
+      hlsRef.current.nextLevel = -1;
+      return true;
+    }
+
     const ladder = ['1080p', '720p', '480p', '360p'];
-    const currQ = (currentQuality === 'auto' ? actualQuality : currentQuality) || '1080p';
+    const currQ = actualQuality || '1080p';
     const currIdx = ladder.findIndex((q) => currQ.toLowerCase().includes(q.replace('p', '')));
     const startIdx = currIdx !== -1 ? currIdx + 1 : 1;
 
     for (let i = startIdx; i < ladder.length; i++) {
       const candidateQ = ladder[i];
       if (availableQualities.some((q) => q.toLowerCase() === candidateQ.toLowerCase())) {
-        console.warn(`[SmartPlayer] Weak connection detected on ${currQ}. Auto-stepping down to ${candidateQ}...`);
-        setCurrentQuality(candidateQ);
-        if (onQualityChange) onQualityChange(candidateQ);
-        if (hlsRef.current && hlsRef.current.levels && hlsRef.current.levels.length > 0) {
-          const lvlIdx = findMatchingHlsLevelIndex(hlsRef.current.levels, candidateQ);
-          if (lvlIdx !== -1) {
-            hlsRef.current.currentLevel = lvlIdx;
-            hlsRef.current.loadLevel = lvlIdx;
-          }
-        }
+        console.warn(`[SmartPlayer] Auto (Smart) detected weak network on ${currQ}. Stepping down to ${candidateQ}...`);
+        setActualQuality(candidateQ.toUpperCase());
         return true;
       }
     }
     return false;
-  }, [currentQuality, actualQuality, availableQualities, onQualityChange]);
+  }, [currentQuality, actualQuality, availableQualities]);
 
   // When selectedServer switches (Server 1 <-> Server 2), preserve timestamp & quality while resetting stale server tracks
   useEffect(() => {
@@ -1929,14 +1971,15 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
     // If HLS stream has internal multi-quality levels, switch level immediately using widescreen-aware matcher
     if (hlsRef.current && isHlsStreamRef.current && hlsRef.current.levels && hlsRef.current.levels.length > 0) {
       if (cleanQual.toLowerCase() === 'auto') {
-        hlsRef.current.currentLevel = -1;
+        hlsRef.current.loadLevel = -1;
         hlsRef.current.nextLevel = -1;
+        hlsRef.current.currentLevel = -1;
       } else {
         const levelIdx = findMatchingHlsLevelIndex(hlsRef.current.levels, cleanQual);
         if (levelIdx !== -1) {
+          hlsRef.current.loadLevel = levelIdx;
           hlsRef.current.nextLevel = levelIdx;
           hlsRef.current.currentLevel = levelIdx;
-          hlsRef.current.loadLevel = levelIdx;
         }
       }
     }

@@ -1070,6 +1070,15 @@ class MaxPlayNativeBridge(
         }
     }
 
+    @JavascriptInterface
+    fun exportOfflineVideoToGallery(storageKey: String, title: String): String {
+        return MaxPlayOfflineVault.exportOfflineVideoToGallery(
+            context = activity.applicationContext,
+            storageKey = storageKey,
+            title = title
+        ).toString()
+    }
+
     /**
      * Downloads the Admin's latest APK in the background with live progress callbacks
      * and launches Android's native Package Installer automatically.

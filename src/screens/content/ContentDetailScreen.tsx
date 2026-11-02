@@ -32,6 +32,7 @@ import {
   Loader2,
   Server
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ContentItem, CommentItem, CommentReplyItem, SeasonData } from '../../types';
 import { InlinePlayer } from '../../components/player/InlinePlayer';
 import { DownloadSelectionModal } from '../../components/downloads/DownloadSelectionModal';
@@ -600,10 +601,12 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
     return map;
   });
 
-  const { apkDownloadUrl } = useGeneralSettings();
+  const { apkDownloadUrl, shareDownloadUrl } = useGeneralSettings();
   const [isMyList, setIsMyList] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [offlineVideoUrl, setOfflineVideoUrl] = useState<string | null>(null);
+  const [helpConfirmPending, setHelpConfirmPending] = useState(false);
+  const helpConfirmTimerRef = useRef<any>(null);
 
   // Check if content or active episode is stored offline in IndexedDB
   useEffect(() => {
@@ -2387,9 +2390,19 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
   const handleShare = async () => {
     const shareTitle = content.title || 'MaxPlay';
-    const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://maxplay.app';
-    const deepLinkUrl = `${origin}/?watch=${encodeURIComponent(content.id)}`;
-    const appDownloadUrl = (apkDownloadUrl || '').trim() || origin;
+    const configuredAppLink = (shareDownloadUrl || apkDownloadUrl || '').trim();
+    const isLocalhostOrigin =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const baseAppUrl =
+      configuredAppLink ||
+      (!isLocalhostOrigin && typeof window !== 'undefined' && window.location.origin
+        ? window.location.origin
+        : 'https://maxplay.app');
+
+    // Deep-link URL that opens MaxPlay directly to this movie/series or lets new users download MaxPlay
+    const separator = baseAppUrl.includes('?') ? '&' : '?';
+    const watchDeepLinkUrl = `${baseAppUrl}${separator}watch=${encodeURIComponent(content.id)}`;
 
     const typeLabel = (content.type || 'movie').toUpperCase();
     const ratingLabel = content.rating ? `⭐ ${content.rating}` : '';
@@ -2400,21 +2413,21 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
       : '';
 
     const shareCardLines = [
-      `🎬 *${shareTitle}* — MaxPlay Official`,
+      `🎬 *${shareTitle}* — Watch Free in HD on MaxPlay`,
       metaRow,
       genresRow,
       '',
-      `▶️ Watch Directly on MaxPlay:`,
-      deepLinkUrl,
-      '',
-      `📲 Download MaxPlay App:`,
-      appDownloadUrl,
+      `▶️ Watch Now on MaxPlay App:`,
+      watchDeepLinkUrl,
+      ...(configuredAppLink && configuredAppLink !== watchDeepLinkUrl
+        ? ['', `📲 Download MaxPlay Official App:`, configuredAppLink]
+        : []),
     ].filter((line, idx, arr) => line !== '' || (idx > 0 && arr[idx - 1] !== ''));
 
     const shareText = shareCardLines.join('\n');
 
     // 1. Native Android Share Sheet inside APK
-    if (NativeBridgeService.shareContentNative(shareTitle, shareText, deepLinkUrl)) {
+    if (NativeBridgeService.shareContentNative(shareTitle, shareText, watchDeepLinkUrl)) {
       return;
     }
 
@@ -2439,7 +2452,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                   await navigator.share({
                     title: `${shareTitle} | MaxPlay`,
                     text: shareText,
-                    url: deepLinkUrl,
+                    url: watchDeepLinkUrl,
                     files: [posterFile],
                   });
                   sharedWithPoster = true;
@@ -2455,7 +2468,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           await navigator.share({
             title: `${shareTitle} | MaxPlay`,
             text: shareText,
-            url: deepLinkUrl,
+            url: watchDeepLinkUrl,
           });
         }
         return;
@@ -2926,6 +2939,14 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
   const handleBackWithMiniplayer = useCallback(() => {
     saveProgressOnLeave();
+    const autoMiniEnabled = localStorage.getItem('maxplay_auto_miniplayer') !== 'false';
+    const activeState = (window as any).__maxplayActivePlaybackState;
+    if (autoMiniEnabled && activeState?.isPlaying && typeof (window as any).__enterMaxPlayPipOnBack === 'function') {
+      const enteredPip = (window as any).__enterMaxPlayPipOnBack();
+      if (enteredPip) {
+        return;
+      }
+    }
     onBack();
   }, [saveProgressOnLeave, onBack]);
 
@@ -3257,13 +3278,10 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           </div>
         )}
 
-        {/* NATIVE BANNER AD */}
-        <NativeBanner />
-
         {/* PLAYBACK & RESOURCES SECTION */}
         <div className="relative z-30 pt-1">
             {/* Header Row: Playback & Resources + Uploaded by MaxPlay Admin ? */}
-            <div className="flex items-center gap-2.5 mb-3 min-w-0">
+            <div className="relative flex items-center gap-2.5 mb-3 min-w-0">
               <span className="font-bold text-[16px] sm:text-[17px] text-white tracking-tight shrink-0">
                 Playback & Resources
               </span>
@@ -3271,8 +3289,56 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                 <span className="truncate">
                   Uploaded by {content.uploader?.name || 'MaxPlay Admin'}
                 </span>
-                <HelpCircle className="w-4 h-4 text-[#7c808b] shrink-0" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (helpConfirmPending) {
+                      if (helpConfirmTimerRef.current) {
+                        clearTimeout(helpConfirmTimerRef.current);
+                        helpConfirmTimerRef.current = null;
+                      }
+                      setHelpConfirmPending(false);
+                      window.dispatchEvent(new CustomEvent('MAXPLAY_OPEN_FEEDBACK_SCREEN'));
+                    } else {
+                      setHelpConfirmPending(true);
+                      if (helpConfirmTimerRef.current) clearTimeout(helpConfirmTimerRef.current);
+                      helpConfirmTimerRef.current = setTimeout(() => {
+                        setHelpConfirmPending(false);
+                      }, 3200);
+                    }
+                  }}
+                  className={`p-0.5 rounded-full transition cursor-pointer shrink-0 ${
+                    helpConfirmPending
+                      ? 'text-[#A78BFA] bg-[#8B5CF6]/20 ring-1 ring-[#8B5CF6]/50 scale-110'
+                      : 'text-[#7c808b] hover:text-white'
+                  }`}
+                  title="Need help? Tap twice to open Feedback & Support"
+                >
+                  <HelpCircle className="w-4 h-4 shrink-0" />
+                </button>
               </div>
+
+              {/* 2-Step Interactive Help Tooltip Popup */}
+              <AnimatePresence>
+                {helpConfirmPending && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.16 } }}
+                    exit={{ opacity: 0, y: 4, scale: 0.95, transition: { duration: 0.12 } }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (helpConfirmTimerRef.current) clearTimeout(helpConfirmTimerRef.current);
+                      setHelpConfirmPending(false);
+                      window.dispatchEvent(new CustomEvent('MAXPLAY_OPEN_FEEDBACK_SCREEN'));
+                    }}
+                    className="absolute right-0 -top-11 z-50 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#181924] border border-[#8B5CF6]/50 shadow-[0_8px_24px_rgba(0,0,0,0.85)] text-[11px] font-semibold text-white cursor-pointer"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-ping shrink-0" />
+                    <span>Need help or issue? Tap <strong className="text-[#A78BFA]">?</strong> again for Feedback & Support</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* External Selector Boxes Row: Language -> Season (Series only) -> Quality */}
@@ -3526,6 +3592,11 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                 </div>
               </div>
             )}
+        </div>
+
+        {/* NATIVE BANNER AD — Placed between Episode/Playback section and For you / Comments tabs */}
+        <div className="my-2">
+          <NativeBanner />
         </div>
 
         {/* Full-bleed dark divider bar matching reference screenshots */}
@@ -3990,19 +4061,27 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         </div>
       )}
 
-      {/* Server Selection Slide-Up Sheet Anchored Directly Below Video Player (GPU-Optimized) */}
-      {isServerModalOpen && content && (
-        <div
-          className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 bg-black/65 flex items-end justify-center p-0"
-          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
-          onClick={() => setIsServerModalOpen(false)}
-        >
-          <div
-            className="bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl animate-in slide-in-from-bottom-4 duration-150"
-            style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
+      {/* Server Selection Slide-Up Sheet Anchored Directly Below Video Player (Animated like Quality/Language Selector) */}
+      <AnimatePresence>
+        {isServerModalOpen && content && (
+          <div className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] z-50 flex items-end justify-center p-0 overflow-hidden">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.16 } }}
+              exit={{ opacity: 0, transition: { duration: 0.14 } }}
+              className="fixed inset-x-0 bottom-0 top-[min(56.25vw,42vh)] bg-black/65"
+              style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+              onClick={() => setIsServerModalOpen(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0, transition: { type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.22 } }}
+              exit={{ y: '100%', transition: { type: 'tween', ease: [0.4, 0, 1, 1], duration: 0.16 } }}
+              className="relative z-10 bg-[#121318] border-t border-white/15 w-full h-full rounded-t-2xl p-5 overflow-y-auto overscroll-contain shadow-2xl"
+              style={{ willChange: 'transform', transform: 'translate3d(0,0,0)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
             <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-white/10 sticky top-0 bg-[#121318] z-10">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
@@ -4163,9 +4242,10 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                 );
               })()}
             </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* Instant Download Selection Modal */}
       <DownloadSelectionModal
@@ -4176,6 +4256,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         selectedServer={selectedServer}
         activePrimaryUrl={primaryServerUrl}
         activeSecondaryUrl={secondaryServerUrl}
+        activeStreamDuration={globalTotalDuration || activePartDuration}
         onClose={() => setShowDownloadModal(false)}
         onSuccessToast={(msg) => {
           setToastMessage(msg);

@@ -716,10 +716,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       className="
                         absolute left-0 bottom-0.5 z-20
                         font-black text-[72px] sm:text-[80px] leading-[0.84] tracking-tighter
-                        text-black/85 select-none pointer-events-none
+                        text-[#0A0A0D] select-none pointer-events-none
                         drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]
                       "
-                      style={{ WebkitTextStroke: '2.5px #FFFFFF' }}
+                      style={{ WebkitTextStroke: '4.5px #FFFFFF', paintOrder: 'stroke fill' }}
                     >
                       {index + 1}
                     </span>
@@ -1137,10 +1137,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           className="
                             absolute left-0 bottom-0.5 z-20
                             font-black text-[72px] sm:text-[80px] leading-[0.84] tracking-tighter
-                            text-black/85 select-none pointer-events-none
+                            text-[#0A0A0D] select-none pointer-events-none
                             drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]
                           "
-                          style={{ WebkitTextStroke: '2.5px #FFFFFF' }}
+                          style={{ WebkitTextStroke: '4.5px #FFFFFF', paintOrder: 'stroke fill' }}
                         >
                           {index + 1}
                         </span>

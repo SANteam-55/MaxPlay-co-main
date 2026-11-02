@@ -640,20 +640,31 @@ object MaxPlayOfflineVault {
                 val dateCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Video.Media.DATE_MODIFIED)
 
                 var count = 0
+                val supportedExts = setOf("mp4", "mkv", "webm", "mov", "m4v", "3gp")
                 while (c.moveToNext() && count < 200) {
                     val id = c.getLong(idCol)
                     val sizeBytes = c.getLong(sizeCol)
                     if (sizeBytes < 64 * 1024L) continue // Ignore tiny/corrupt files
 
                     val displayName = c.getString(nameCol) ?: ""
+                    val durMs = c.getLong(durCol)
+                    val mime = (c.getString(mimeCol) ?: "video/mp4").lowercase()
+
+                    // Filter strictly to supported playable video formats with valid duration (> 1s)
+                    val ext = displayName.substringAfterLast('.', "").lowercase()
+                    val isSupportedMime = mime.startsWith("video/") && (
+                        mime.contains("mp4") || mime.contains("matroska") || mime.contains("x-matroska") ||
+                        mime.contains("webm") || mime.contains("quicktime") || mime.contains("3gpp") || mime.contains("mpeg")
+                    )
+                    val isSupportedExt = ext.isEmpty() || supportedExts.contains(ext)
+                    if (durMs < 1000L || (!isSupportedMime && !isSupportedExt)) continue
+
                     val rawTitle = c.getString(titleCol) ?: displayName
-                    val cleanTitle = rawTitle.replace(Regex("\\.(mp4|mkv|webm|mov|avi|flv|3gp)$", RegexOption.IGNORE_CASE), "")
+                    val cleanTitle = rawTitle.replace(Regex("\\.(mp4|mkv|webm|mov|m4v|avi|flv|3gp)$", RegexOption.IGNORE_CASE), "")
                         .ifBlank { "Video $id" }
 
-                    val durMs = c.getLong(durCol)
                     val width = c.getInt(wCol)
                     val height = c.getInt(hCol)
-                    val mime = c.getString(mimeCol) ?: "video/mp4"
                     val folder = c.getString(folderCol) ?: "Phone Storage"
                     val dateMod = c.getLong(dateCol)
 
@@ -1051,6 +1062,39 @@ object MaxPlayOfflineVault {
 
             val safe = sanitizeKey(storageKey)
             val itemDir = File(getVaultRoot(context), safe)
+
+            // Support transferring local phone videos (dev_vid_<mediaStoreId>) by staging into itemDir/seg_0.ts if not yet staged
+            if (storageKey.startsWith("dev_vid_")) {
+                val mediaId = storageKey.removePrefix("dev_vid_").trim().toLongOrNull()
+                if (mediaId != null) {
+                    if (!itemDir.exists()) itemDir.mkdirs()
+                    val stagedSeg0 = File(itemDir, "seg_0.ts")
+                    if (!stagedSeg0.exists() || stagedSeg0.length() <= 0L) {
+                        val contentUri = android.content.ContentUris.withAppendedId(
+                            android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                            mediaId
+                        )
+                        context.contentResolver.openInputStream(contentUri)?.use { input ->
+                            FileOutputStream(stagedSeg0).use { output ->
+                                val buf = ByteArray(512 * 1024)
+                                var r: Int
+                                while (input.read(buf).also { r = it } != -1) {
+                                    output.write(buf, 0, r)
+                                }
+                                output.flush()
+                            }
+                        }
+                        saveDownloadManifest(
+                            context = context,
+                            storageKey = storageKey,
+                            totalSegments = 1,
+                            totalDurationSec = 0.0,
+                            isSingleFile = true
+                        )
+                    }
+                }
+            }
+
             if (!itemDir.exists()) {
                 out.put("ok", false)
                 out.put("error", "Offline item directory not found on disk")
@@ -1648,6 +1692,88 @@ object MaxPlayOfflineVault {
         } catch (e: Exception) {
             out.put("ok", false)
             out.put("error", e.message ?: "Direct P2P transfer failed")
+        }
+        return out
+    }
+
+    /**
+     * Exports a received local video (or single-file offline video) into Android MediaStore.Video.Media (Movies/MaxPlay)
+     * so it immediately appears in the user's phone Gallery & Video apps as well as MaxPlay's Received section.
+     */
+    fun exportOfflineVideoToGallery(context: Context, storageKey: String, title: String): JSONObject {
+        val out = JSONObject()
+        try {
+            val safe = sanitizeKey(storageKey)
+            val itemDir = File(getVaultRoot(context), safe)
+            if (!itemDir.exists()) {
+                out.put("ok", false)
+                out.put("error", "Offline item directory not found")
+                return out
+            }
+
+            val segFiles = (itemDir.listFiles { _, name ->
+                name.startsWith("seg_") && name.endsWith(".ts")
+            } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
+                it.name.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: 0
+            }
+
+            if (segFiles.isEmpty()) {
+                out.put("ok", false)
+                out.put("error", "No video segments found to export")
+                return out
+            }
+
+            val cleanTitle = title.replace(Regex("[^a-zA-Z0-9 _-]"), "").trim().ifBlank { "MaxPlay_Video_${System.currentTimeMillis()}" }
+            val fileName = "${cleanTitle}.mp4"
+            val resolver = context.contentResolver
+
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.Video.Media.TITLE, cleanTitle)
+                put(android.provider.MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    put(android.provider.MediaStore.Video.Media.RELATIVE_PATH, "Movies/MaxPlay")
+                    put(android.provider.MediaStore.Video.Media.IS_PENDING, 1)
+                }
+            }
+
+            val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val insertedUri = resolver.insert(collection, values)
+                ?: throw Exception("Could not create MediaStore entry")
+
+            var totalWritten = 0L
+            resolver.openOutputStream(insertedUri)?.use { os ->
+                val buf = ByteArray(512 * 1024)
+                for (seg in segFiles) {
+                    FileInputStream(seg).use { fis ->
+                        var r: Int
+                        while (fis.read(buf).also { r = it } != -1) {
+                            os.write(buf, 0, r)
+                            totalWritten += r
+                        }
+                    }
+                }
+                os.flush()
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val doneValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Video.Media.IS_PENDING, 0)
+                }
+                resolver.update(insertedUri, doneValues, null, null)
+            }
+
+            out.put("ok", true)
+            out.put("uri", insertedUri.toString())
+            out.put("bytes", totalWritten)
+        } catch (e: Exception) {
+            out.put("ok", false)
+            out.put("error", e.message ?: "Failed to export video to Gallery")
         }
         return out
     }

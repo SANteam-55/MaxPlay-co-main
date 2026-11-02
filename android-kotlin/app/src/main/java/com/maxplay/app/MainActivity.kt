@@ -182,6 +182,12 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureCorsFreeWebView() {
+        // Security Hardening: Explicitly disable remote Chrome DevTools WebView inspection & check runtime integrity
+        try {
+            WebView.setWebContentsDebuggingEnabled(false)
+            verifyRuntimeSecurityIntegrity()
+        } catch (_: Exception) {}
+
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
@@ -384,13 +390,35 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Automatically triggers Native Android Picture-in-Picture (PiP) when the user presses Home / minimizes the app
-     * while a video is actively playing and Auto-Miniplayer is enabled in Settings.
+     * while a video is actively playing (regardless of the in-app Back button Auto-Miniplayer toggle).
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (autoPipEnabled && isVideoCurrentlyPlaying) {
+        if (isVideoCurrentlyPlaying) {
             enterNativePipMode()
         }
+    }
+
+    /**
+     * Runtime anti-tamper, debugger, and Frida hook inspection guard.
+     */
+    private fun verifyRuntimeSecurityIntegrity() {
+        try {
+            if (android.os.Debug.isDebuggerConnected() || android.os.Debug.waitingForDebugger()) {
+                finishAffinity()
+                return
+            }
+            val mapsFile = java.io.File("/proc/self/maps")
+            if (mapsFile.exists() && mapsFile.canRead()) {
+                val mapsContent = mapsFile.readText()
+                if (mapsContent.contains("frida-agent", ignoreCase = true) ||
+                    mapsContent.contains("frida-gadget", ignoreCase = true) ||
+                    mapsContent.contains("xposedbridge", ignoreCase = true)
+                ) {
+                    finishAffinity()
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     /**
