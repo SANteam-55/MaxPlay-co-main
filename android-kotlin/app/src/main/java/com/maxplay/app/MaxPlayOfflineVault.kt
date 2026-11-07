@@ -323,12 +323,21 @@ object MaxPlayOfflineVault {
             val completedAudioIndices = JSONArray()
             audioIdxList.forEach { completedAudioIndices.put(it) }
 
+            val directMp4 = File(itemDir, "direct.mp4")
+            if (directMp4.exists() && directMp4.length() > 512L) {
+                if (count == 0) {
+                    count = 1
+                    bytes = directMp4.length()
+                    completedIndices.put(0)
+                }
+            }
+
             json.put("exists", count > 0)
             json.put("downloadedSegments", count)
             json.put("totalBytes", bytes)
             json.put("completedIndices", completedIndices)
             json.put("completedAudioIndices", completedAudioIndices)
-            json.put("playbackUrl", getLocalPlaybackUrl(storageKey))
+            json.put("playbackUrl", getLocalPlaybackUrl(storageKey, context))
         } catch (e: Exception) {
             json.put("exists", false)
             json.put("error", e.message ?: "Error")
@@ -433,11 +442,45 @@ object MaxPlayOfflineVault {
         }
     }
 
+    private fun isProgressiveVideoFile(file: File): Boolean {
+        if (!file.exists() || file.length() < 16L) return false
+        return try {
+            val hdr = ByteArray(12)
+            FileInputStream(file).use { it.read(hdr) }
+            // Check MP4/MOV 'ftyp' at bytes 4..7 or MKV/WebM EBML 0x1A 0x45 0xDF 0xA3 at bytes 0..3
+            val isMp4 = hdr[4] == 'f'.code.toByte() && hdr[5] == 't'.code.toByte() &&
+                hdr[6] == 'y'.code.toByte() && hdr[7] == 'p'.code.toByte()
+            val isMkvOrWebm = hdr[0] == 0x1A.toByte() && hdr[1] == 0x45.toByte() &&
+                hdr[2] == 0xDF.toByte() && hdr[3] == 0xA3.toByte()
+            isMp4 || isMkvOrWebm
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /**
-     * Returns the virtual HTTPS URL intercepted by CorsFreeWebViewClient for zero-RAM playback.
+     * Returns the optimal playback URL for an offline item:
+     * - If the item is a direct MP4/MKV/WebM video (e.g. received local phone video), serves it via the
+     *   dedicated Local Loopback HTTP Range Server (`http://127.0.0.1:<port>/vault-video/{safe}/video.mp4`)
+     *   so HTML5 `<video>` plays and seeks natively without feeding an MP4 container into `hls.js`.
+     * - Otherwise returns the local HLS playlist URL (`https://maxplay.local/offline-vault/{safe}/index.m3u8`).
      */
-    fun getLocalPlaybackUrl(storageKey: String): String {
+    fun getLocalPlaybackUrl(storageKey: String, context: Context? = null): String {
         val safe = sanitizeKey(storageKey)
+        if (context != null) {
+            try {
+                val itemDir = File(getVaultRoot(context), safe)
+                val directMp4 = File(itemDir, "direct.mp4")
+                val seg0 = File(itemDir, "seg_0.ts")
+                if ((directMp4.exists() && directMp4.length() > 512L) || isProgressiveVideoFile(seg0)) {
+                    val port = ensureLocalVideoHttpServer(context)
+                    if (port > 0) {
+                        return "http://127.0.0.1:$port/vault-video/$safe/video.mp4"
+                    }
+                    return "https://maxplay.local/offline-vault/$safe/direct.mp4"
+                }
+            } catch (_: Exception) {}
+        }
         return "https://maxplay.local/offline-vault/$safe/index.m3u8"
     }
 
@@ -450,6 +493,9 @@ object MaxPlayOfflineVault {
             val safe = sanitizeKey(storageKey)
             val itemDir = File(getVaultRoot(context), safe)
             if (!itemDir.exists()) return false
+            val directMp4 = File(itemDir, "direct.mp4")
+            if (directMp4.exists() && directMp4.length() > 512L) return true
+
             val seg0 = File(itemDir, "seg_0.ts")
             if (!seg0.exists() || seg0.length() <= 0L) return false
 
@@ -578,6 +624,23 @@ object MaxPlayOfflineVault {
                         ByteArrayInputStream(bytes)
                     )
                 }
+            } else if (fileName == "direct.mp4") {
+                val directFile = File(itemDir, "direct.mp4").takeIf { it.exists() && it.length() > 0L }
+                    ?: File(itemDir, "seg_0.ts").takeIf { it.exists() && it.length() > 0L }
+                if (directFile != null) {
+                    val fileHeaders = corsHeaders + mapOf(
+                        "Content-Length" to directFile.length().toString(),
+                        "Accept-Ranges" to "bytes"
+                    )
+                    return WebResourceResponse(
+                        "video/mp4",
+                        null,
+                        200,
+                        "OK",
+                        fileHeaders,
+                        FileInputStream(directFile)
+                    )
+                }
             } else if ((fileName.startsWith("seg_") || fileName.startsWith("aud_")) && fileName.endsWith(".ts")) {
                 val segFile = File(itemDir, fileName)
                 if (segFile.exists() && segFile.length() > 0L) {
@@ -680,7 +743,13 @@ object MaxPlayOfflineVault {
 
                     val sizeMb = String.format(java.util.Locale.US, "%.1f", sizeBytes / (1024.0 * 1024.0)).toDouble()
 
-                     val isVertical = height > width && width > 0
+                    val isVertical = height > width && width > 0
+                    val localPort = ensureLocalVideoHttpServer(context)
+                    val playbackUrl = if (localPort > 0) {
+                        "http://127.0.0.1:$localPort/device-video/$id"
+                    } else {
+                        "https://maxplay.local/device-video/$id"
+                    }
 
                     val obj = JSONObject().apply {
                         put("id", id.toString())
@@ -694,7 +763,7 @@ object MaxPlayOfflineVault {
                         put("isVertical", isVertical)
                         put("mimeType", mime)
                         put("dateModified", dateMod)
-                        put("playbackUrl", "https://maxplay.local/device-video/$id")
+                        put("playbackUrl", playbackUrl)
                         put("thumbnailUrl", "https://maxplay.local/device-video-thumb/$id")
                     }
                     arr.put(obj)
@@ -835,6 +904,275 @@ object MaxPlayOfflineVault {
         }
     }
 
+    // =========================================================================
+    // PERSISTENT LOCAL LOOPBACK HTTP VIDEO SERVER (127.0.0.1) FOR ZERO-GLITCH SEEKING
+    // =========================================================================
+    @Volatile
+    private var localVideoServerSocket: java.net.ServerSocket? = null
+    @Volatile
+    private var localVideoServerPort: Int = 0
+
+    private fun queryMediaStoreVideoSize(context: Context, contentUri: android.net.Uri): Long {
+        return try {
+            context.contentResolver.query(
+                contentUri,
+                arrayOf(android.provider.MediaStore.Video.Media.SIZE),
+                null,
+                null,
+                null
+            )?.use { c ->
+                if (c.moveToFirst()) c.getLong(0) else -1L
+            } ?: -1L
+        } catch (_: Exception) {
+            -1L
+        }
+    }
+
+    fun ensureLocalVideoHttpServer(context: Context): Int {
+        val existing = localVideoServerSocket
+        if (existing != null && !existing.isClosed && localVideoServerPort > 0) {
+            return localVideoServerPort
+        }
+        synchronized(this) {
+            val checkAgain = localVideoServerSocket
+            if (checkAgain != null && !checkAgain.isClosed && localVideoServerPort > 0) {
+                return localVideoServerPort
+            }
+            return try {
+                val appCtx = context.applicationContext
+                val server = java.net.ServerSocket(0, 128, java.net.InetAddress.getByName("127.0.0.1"))
+                localVideoServerSocket = server
+                localVideoServerPort = server.localPort
+                InbuiltStreamScraper.backgroundExecutor.execute {
+                    while (localVideoServerSocket == server && !server.isClosed) {
+                        try {
+                            val client = server.accept()
+                            InbuiltStreamScraper.backgroundExecutor.execute {
+                                handleLocalVideoHttpSocket(appCtx, client)
+                            }
+                        } catch (_: Exception) {
+                            break
+                        }
+                    }
+                }
+                localVideoServerPort
+            } catch (_: Exception) {
+                0
+            }
+        }
+    }
+
+    private fun handleLocalVideoHttpSocket(context: Context, socket: java.net.Socket) {
+        socket.use { s ->
+            try {
+                s.soTimeout = 30000
+                s.tcpNoDelay = true
+                s.sendBufferSize = 1024 * 1024
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(s.getInputStream()))
+                val requestLine = reader.readLine() ?: return
+                val parts = requestLine.split(" ")
+                if (parts.size < 2) return
+                val method = parts[0].uppercase()
+                val reqPath = parts[1].substringBefore("?")
+
+                var rangeHeader: String? = null
+                while (true) {
+                    val line = reader.readLine()
+                    if (line.isNullOrEmpty()) break
+                    if (line.startsWith("Range:", ignoreCase = true)) {
+                        rangeHeader = line.substringAfter(":").trim()
+                    }
+                }
+
+                val outStream = java.io.BufferedOutputStream(s.getOutputStream(), 256 * 1024)
+                if (method == "OPTIONS") {
+                    val headers = "HTTP/1.1 200 OK\r\n" +
+                        "Access-Control-Allow-Origin: *\r\n" +
+                        "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n" +
+                        "Access-Control-Allow-Headers: Range, Content-Type, Accept, Origin\r\n" +
+                        "Access-Control-Expose-Headers: Content-Length, Content-Range, Accept-Ranges\r\n" +
+                        "Accept-Ranges: bytes\r\n" +
+                        "Content-Length: 0\r\n" +
+                        "Connection: close\r\n\r\n"
+                    outStream.write(headers.toByteArray(Charsets.UTF_8))
+                    outStream.flush()
+                    return
+                }
+
+                // Route 1: /device-video/{id}
+                if (reqPath.startsWith("/device-video/")) {
+                    val idStr = reqPath.removePrefix("/device-video/").substringBefore("/").trim()
+                    val videoId = idStr.toLongOrNull() ?: return
+                    val contentUri = android.content.ContentUris.withAppendedId(
+                        android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        videoId
+                    )
+                    val rawMime = (context.contentResolver.getType(contentUri) ?: "video/mp4").lowercase()
+                    val mimeType = when {
+                        rawMime.contains("webm") -> "video/webm"
+                        rawMime.contains("ogg") -> "video/ogg"
+                        else -> "video/mp4"
+                    }
+
+                    val pfd = context.contentResolver.openFileDescriptor(contentUri, "r")
+                    if (pfd == null) {
+                        outStream.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                        outStream.flush()
+                        return
+                    }
+
+                    pfd.use { descriptor ->
+                        val statLen = descriptor.statSize
+                        val totalLength = if (statLen > 0L) statLen else queryMediaStoreVideoSize(context, contentUri)
+                        val fis = FileInputStream(descriptor.fileDescriptor)
+                        streamByteRangeOverSocket(
+                            method = method,
+                            mimeType = mimeType,
+                            totalLength = totalLength,
+                            rangeHeader = rangeHeader,
+                            fileDescriptor = descriptor.fileDescriptor,
+                            fis = fis,
+                            outStream = outStream
+                        )
+                    }
+                    return
+                }
+
+                // Route 2: /vault-video/{safeKey}/video.mp4
+                if (reqPath.startsWith("/vault-video/")) {
+                    val safeKey = reqPath.removePrefix("/vault-video/").substringBefore("/").trim()
+                    val itemDir = File(getVaultRoot(context), sanitizeKey(safeKey))
+                    val targetFile = File(itemDir, "direct.mp4").takeIf { it.exists() && it.length() > 0L }
+                        ?: File(itemDir, "seg_0.ts").takeIf { it.exists() && it.length() > 0L }
+
+                    if (targetFile == null) {
+                        outStream.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                        outStream.flush()
+                        return
+                    }
+
+                    FileInputStream(targetFile).use { fis ->
+                        streamByteRangeOverSocket(
+                            method = method,
+                            mimeType = "video/mp4",
+                            totalLength = targetFile.length(),
+                            rangeHeader = rangeHeader,
+                            fileDescriptor = fis.fd,
+                            fis = fis,
+                            outStream = outStream
+                        )
+                    }
+                    return
+                }
+
+                outStream.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                outStream.flush()
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun streamByteRangeOverSocket(
+        method: String,
+        mimeType: String,
+        totalLength: Long,
+        rangeHeader: String?,
+        fileDescriptor: java.io.FileDescriptor,
+        fis: FileInputStream,
+        outStream: java.io.OutputStream
+    ) {
+        val hasRange = !rangeHeader.isNullOrBlank() && rangeHeader.startsWith("bytes=") && totalLength > 0L
+        val clampedStart: Long
+        val clampedEnd: Long
+
+        if (hasRange && rangeHeader != null) {
+            val rangeSpec = rangeHeader.removePrefix("bytes=").substringBefore(",").trim()
+            val parts = rangeSpec.split("-")
+            val startPart = parts.getOrNull(0)?.trim() ?: ""
+            val endPart = parts.getOrNull(1)?.trim() ?: ""
+
+            if (startPart.isEmpty() && endPart.isNotEmpty()) {
+                val suffixLen = endPart.toLongOrNull() ?: 0L
+                clampedStart = (totalLength - suffixLen).coerceIn(0L, (totalLength - 1L).coerceAtLeast(0L))
+                clampedEnd = (totalLength - 1L).coerceAtLeast(clampedStart)
+            } else {
+                val parsedStart = startPart.toLongOrNull() ?: 0L
+                val parsedEnd = endPart.takeIf { it.isNotEmpty() }?.toLongOrNull() ?: (totalLength - 1L)
+                clampedStart = parsedStart.coerceIn(0L, (totalLength - 1L).coerceAtLeast(0L))
+                clampedEnd = parsedEnd.coerceIn(clampedStart, (totalLength - 1L).coerceAtLeast(clampedStart))
+            }
+        } else {
+            clampedStart = 0L
+            clampedEnd = (totalLength - 1L).coerceAtLeast(0L)
+        }
+
+        val contentLength = if (totalLength > 0L) (clampedEnd - clampedStart + 1L).coerceAtLeast(0L) else -1L
+
+        if (clampedStart > 0L) {
+            var seekOk = false
+            try {
+                android.system.Os.lseek(fileDescriptor, clampedStart, android.system.OsConstants.SEEK_SET)
+                seekOk = true
+            } catch (_: Exception) {}
+            if (!seekOk) {
+                try {
+                    fis.channel.position(clampedStart)
+                    seekOk = true
+                } catch (_: Exception) {}
+            }
+            if (!seekOk) {
+                var skipped = 0L
+                val discard = ByteArray(16384)
+                while (skipped < clampedStart) {
+                    val s = fis.skip(clampedStart - skipped)
+                    if (s > 0L) {
+                        skipped += s
+                    } else {
+                        val toRead = minOf(discard.size.toLong(), clampedStart - skipped).toInt()
+                        val r = fis.read(discard, 0, toRead)
+                        if (r <= 0) break
+                        skipped += r.toLong()
+                    }
+                }
+            }
+        }
+
+        val statusLine = if (hasRange) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n"
+        val sb = StringBuilder(statusLine)
+        sb.append("Content-Type: $mimeType\r\n")
+        sb.append("Access-Control-Allow-Origin: *\r\n")
+        sb.append("Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n")
+        sb.append("Access-Control-Allow-Headers: Range, Content-Type, Accept, Origin\r\n")
+        sb.append("Access-Control-Expose-Headers: Content-Length, Content-Range, Accept-Ranges\r\n")
+        sb.append("Accept-Ranges: bytes\r\n")
+        sb.append("Cache-Control: no-store\r\n")
+        if (hasRange && totalLength > 0L) {
+            sb.append("Content-Range: bytes $clampedStart-$clampedEnd/$totalLength\r\n")
+        }
+        if (contentLength >= 0L) {
+            sb.append("Content-Length: $contentLength\r\n")
+        }
+        sb.append("Connection: close\r\n\r\n")
+        outStream.write(sb.toString().toByteArray(Charsets.UTF_8))
+
+        if (method == "HEAD") {
+            outStream.flush()
+            return
+        }
+
+        val buf = ByteArray(128 * 1024)
+        var remaining = if (contentLength >= 0L) contentLength else Long.MAX_VALUE
+        while (remaining > 0L) {
+            val toRead = minOf(buf.size.toLong(), remaining).toInt()
+            val r = fis.read(buf, 0, toRead)
+            if (r <= 0) break
+            outStream.write(buf, 0, r)
+            if (contentLength >= 0L) {
+                remaining -= r.toLong()
+            }
+        }
+        outStream.flush()
+    }
+
     /**
      * Streams any local video from Android MediaStore (`https://maxplay.local/device-video/{id}`)
      * with exact FileChannel HTTP Range seeking and bounded stream delivery so local videos play
@@ -866,7 +1204,8 @@ object MaxPlayOfflineVault {
             }
 
             val pfd = context.contentResolver.openFileDescriptor(contentUri, "r") ?: return null
-            val totalLength = pfd.statSize
+            val statLen = pfd.statSize
+            val totalLength = if (statLen > 0L) statLen else queryMediaStoreVideoSize(context, contentUri)
             val fis = android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
 
             val baseHeaders = mutableMapOf(
@@ -989,6 +1328,8 @@ object MaxPlayOfflineVault {
     // =========================================================================
     // DIRECT APP-TO-APP P2P TRANSFER ENGINE (MaxPlay-to-MaxPlay Direct Stream)
     // =========================================================================
+    private const val VIRTUAL_LOCAL_CHUNK_SIZE = 4L * 1024L * 1024L // 4 MB virtual chunks for local phone videos
+
     @Volatile
     private var p2pServerSocket: java.net.ServerSocket? = null
     @Volatile
@@ -1010,6 +1351,27 @@ object MaxPlayOfflineVault {
             .connectionPool(okhttp3.ConnectionPool(64, 5, java.util.concurrent.TimeUnit.MINUTES))
             .retryOnConnectionFailure(true)
             .build()
+    }
+
+    private fun resolveDeviceVideoId(storageKey: String): Long? {
+        val clean = storageKey.trim()
+        if (clean.startsWith("dev_vid_")) {
+            return clean.removePrefix("dev_vid_").trim().toLongOrNull()
+        }
+        return null
+    }
+
+    private fun getDeviceVideoTotalBytes(context: Context, mediaId: Long): Long {
+        val contentUri = android.content.ContentUris.withAppendedId(
+            android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            mediaId
+        )
+        try {
+            context.contentResolver.openFileDescriptor(contentUri, "r")?.use { pfd ->
+                if (pfd.statSize > 0L) return pfd.statSize
+            }
+        } catch (_: Exception) {}
+        return queryMediaStoreVideoSize(context, contentUri)
     }
 
     private fun getAllLocalLanIpAddresses(context: Context): List<String> {
@@ -1082,7 +1444,8 @@ object MaxPlayOfflineVault {
 
     /**
      * Starts an embedded HTTP ServerSocket on port 48821 (or dynamic fallback port) so another
-     * MaxPlay app on the same Wi-Fi / Hotspot can stream segments directly App-to-App at high speed.
+     * MaxPlay app on the same Wi-Fi / Hotspot can stream segments or local phone videos directly
+     * App-to-App at high speed with zero staging delay.
      */
     fun startDirectTransferServer(
         context: Context,
@@ -1094,68 +1457,58 @@ object MaxPlayOfflineVault {
         try {
             stopDirectTransferServer()
 
+            val localMediaId = resolveDeviceVideoId(storageKey)
             val safe = sanitizeKey(storageKey)
             val itemDir = File(getVaultRoot(context), safe)
 
-            // Support transferring local phone videos (dev_vid_<mediaStoreId>) by staging into itemDir/seg_0.ts if not yet staged
-            if (storageKey.startsWith("dev_vid_")) {
-                val mediaId = storageKey.removePrefix("dev_vid_").trim().toLongOrNull()
-                if (mediaId != null) {
-                    if (!itemDir.exists()) itemDir.mkdirs()
-                    val stagedSeg0 = File(itemDir, "seg_0.ts")
-                    if (!stagedSeg0.exists() || stagedSeg0.length() <= 0L) {
-                        val contentUri = android.content.ContentUris.withAppendedId(
-                            android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                            mediaId
-                        )
-                        context.contentResolver.openInputStream(contentUri)?.use { input ->
-                            FileOutputStream(stagedSeg0).use { output ->
-                                val buf = ByteArray(512 * 1024)
-                                var r: Int
-                                while (input.read(buf).also { r = it } != -1) {
-                                    output.write(buf, 0, r)
-                                }
-                                output.flush()
-                            }
-                        }
-                        saveDownloadManifest(
-                            context = context,
-                            storageKey = storageKey,
-                            totalSegments = 1,
-                            totalDurationSec = 0.0,
-                            isSingleFile = true
-                        )
-                    }
-                }
-            }
-
-            if (!itemDir.exists()) {
-                out.put("ok", false)
-                out.put("error", "Offline item directory not found on disk")
-                return out
-            }
-
-            val segFiles = (itemDir.listFiles { _, name ->
-                name.startsWith("seg_") && name.endsWith(".ts")
-            } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
-                it.name.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: 0
-            }
-
-            if (segFiles.isEmpty()) {
-                out.put("ok", false)
-                out.put("error", "No video segments found for this download")
-                return out
-            }
-
-            val audFiles = (itemDir.listFiles { _, name ->
-                name.startsWith("aud_") && name.endsWith(".ts")
-            } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
-                it.name.removePrefix("aud_").removeSuffix(".ts").toIntOrNull() ?: 0
-            }
-
+            var segFiles: List<File> = emptyList()
+            var audFiles: List<File> = emptyList()
             var totalBytes = 0L
-            segFiles.forEach { totalBytes += it.length() }
-            audFiles.forEach { totalBytes += it.length() }
+            var totalSegmentsCount = 0
+
+            if (localMediaId != null) {
+                val localSize = getDeviceVideoTotalBytes(context, localMediaId)
+                if (localSize <= 0L) {
+                    out.put("ok", false)
+                    out.put("error", "Local phone video not found in MediaStore")
+                    return out
+                }
+                totalBytes = localSize
+                totalSegmentsCount = ((localSize + VIRTUAL_LOCAL_CHUNK_SIZE - 1L) / VIRTUAL_LOCAL_CHUNK_SIZE).toInt().coerceAtLeast(1)
+            } else {
+                if (!itemDir.exists()) {
+                    out.put("ok", false)
+                    out.put("error", "Offline item directory not found on disk")
+                    return out
+                }
+
+                val directMp4 = File(itemDir, "direct.mp4")
+                segFiles = (itemDir.listFiles { _, name ->
+                    name.startsWith("seg_") && name.endsWith(".ts")
+                } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
+                    it.name.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: 0
+                }
+
+                if (segFiles.isEmpty() && directMp4.exists() && directMp4.length() > 0L) {
+                    segFiles = listOf(directMp4)
+                }
+
+                if (segFiles.isEmpty()) {
+                    out.put("ok", false)
+                    out.put("error", "No video segments found for this download")
+                    return out
+                }
+
+                audFiles = (itemDir.listFiles { _, name ->
+                    name.startsWith("aud_") && name.endsWith(".ts")
+                } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
+                    it.name.removePrefix("aud_").removeSuffix(".ts").toIntOrNull() ?: 0
+                }
+
+                segFiles.forEach { totalBytes += it.length() }
+                audFiles.forEach { totalBytes += it.length() }
+                totalSegmentsCount = segFiles.size
+            }
 
             val server = try {
                 java.net.ServerSocket(48821, 512)
@@ -1187,7 +1540,7 @@ object MaxPlayOfflineVault {
             out.put("ok", true)
             out.put("ip", localIp)
             out.put("port", boundPort)
-            out.put("totalSegments", segFiles.size)
+            out.put("totalSegments", totalSegmentsCount)
             out.put("totalAudioSegments", audFiles.size)
             out.put("totalBytes", totalBytes)
         } catch (e: Exception) {
@@ -1246,16 +1599,163 @@ object MaxPlayOfflineVault {
                 }
 
                 val effectiveStorageKey = if (queryStorageKey.isNotBlank()) queryStorageKey else p2pActiveStorageKey
+                val localMediaId = resolveDeviceVideoId(effectiveStorageKey)
+                val targetName = reqPath.removePrefix(prefix)
+
+                // FAST ZERO-COPY PATH FOR LOCAL PHONE VIDEOS (dev_vid_<mediaId>)
+                if (localMediaId != null) {
+                    val localFileBytes = getDeviceVideoTotalBytes(context, localMediaId)
+                    val virtualSegCount = if (localFileBytes > 0L) {
+                        ((localFileBytes + VIRTUAL_LOCAL_CHUNK_SIZE - 1L) / VIRTUAL_LOCAL_CHUNK_SIZE).toInt().coerceAtLeast(1)
+                    } else 0
+
+                    if (targetName == "manifest.json") {
+                        val metaObj = try { JSONObject(p2pActiveMetadataJson) } catch (_: Exception) { JSONObject() }
+                        val manifestJson = JSONObject().apply {
+                            put("ok", virtualSegCount > 0)
+                            put("code", p2pActiveCode)
+                            put("storageKey", effectiveStorageKey)
+                            put("totalSegments", virtualSegCount)
+                            put("totalAudioSegments", 0)
+                            put("totalDurationSec", 0.0)
+                            put("isSingleFile", true)
+                            put("isDirectMp4", true)
+                            put("totalBytes", localFileBytes)
+                            put("metadata", metaObj)
+                        }.toString().toByteArray(Charsets.UTF_8)
+
+                        val headers = "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/json\r\n" +
+                            "Access-Control-Allow-Origin: *\r\n" +
+                            "Content-Length: ${manifestJson.size}\r\n" +
+                            "Connection: close\r\n\r\n"
+                        outStream.write(headers.toByteArray(Charsets.UTF_8))
+                        outStream.write(manifestJson)
+                        outStream.flush()
+                        return
+                    }
+
+                    val contentUri = android.content.ContentUris.withAppendedId(
+                        android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        localMediaId
+                    )
+
+                    if (targetName == "batch") {
+                        var startIdx = 0
+                        var endIdx = -1
+                        for (pair in queryStr.split("&")) {
+                            val kv = pair.split("=")
+                            if (kv.size == 2) {
+                                when (kv[0]) {
+                                    "start" -> startIdx = kv[1].toIntOrNull() ?: 0
+                                    "end" -> endIdx = kv[1].toIntOrNull() ?: -1
+                                }
+                            }
+                        }
+
+                        val clampedStart = startIdx.coerceAtLeast(0)
+                        val clampedEnd = (if (endIdx >= clampedStart) endIdx else virtualSegCount - 1)
+                            .coerceAtMost(virtualSegCount - 1)
+
+                        var totalBatchPayloadBytes = 4L
+                        val chunkRanges = mutableListOf<Triple<Int, Long, Int>>()
+                        if (clampedStart <= clampedEnd && localFileBytes > 0L) {
+                            for (idx in clampedStart..clampedEnd) {
+                                val offset = idx.toLong() * VIRTUAL_LOCAL_CHUNK_SIZE
+                                if (offset >= localFileBytes) break
+                                val len = minOf(VIRTUAL_LOCAL_CHUNK_SIZE, localFileBytes - offset).toInt()
+                                if (len > 0) {
+                                    chunkRanges.add(Triple(idx, offset, len))
+                                    totalBatchPayloadBytes += 8L + len.toLong()
+                                }
+                            }
+                        }
+
+                        val headers = "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/octet-stream\r\n" +
+                            "Access-Control-Allow-Origin: *\r\n" +
+                            "Content-Length: $totalBatchPayloadBytes\r\n" +
+                            "Connection: close\r\n\r\n"
+                        outStream.write(headers.toByteArray(Charsets.UTF_8))
+
+                        val dataOut = java.io.DataOutputStream(outStream)
+                        val copyBuf = ByteArray(512 * 1024)
+                        context.contentResolver.openFileDescriptor(contentUri, "r")?.use { pfd ->
+                            val fis = FileInputStream(pfd.fileDescriptor)
+                            for ((idx, offset, len) in chunkRanges) {
+                                try {
+                                    android.system.Os.lseek(pfd.fileDescriptor, offset, android.system.OsConstants.SEEK_SET)
+                                } catch (_: Exception) {
+                                    try { fis.channel.position(offset) } catch (_: Exception) {}
+                                }
+                                dataOut.writeInt(idx)
+                                dataOut.writeInt(len)
+                                var remaining = len
+                                while (remaining > 0) {
+                                    val toRead = minOf(copyBuf.size, remaining)
+                                    val r = fis.read(copyBuf, 0, toRead)
+                                    if (r <= 0) break
+                                    dataOut.write(copyBuf, 0, r)
+                                    remaining -= r
+                                }
+                            }
+                        }
+                        dataOut.writeInt(-1)
+                        dataOut.flush()
+                        return
+                    }
+
+                    if (targetName.startsWith("seg_") && targetName.endsWith(".ts")) {
+                        val idx = targetName.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: -1
+                        val offset = idx.toLong() * VIRTUAL_LOCAL_CHUNK_SIZE
+                        if (idx >= 0 && offset < localFileBytes) {
+                            val len = minOf(VIRTUAL_LOCAL_CHUNK_SIZE, localFileBytes - offset).toInt()
+                            val headers = "HTTP/1.1 200 OK\r\n" +
+                                "Content-Type: application/octet-stream\r\n" +
+                                "Access-Control-Allow-Origin: *\r\n" +
+                                "Content-Length: $len\r\n" +
+                                "Connection: close\r\n\r\n"
+                            outStream.write(headers.toByteArray(Charsets.UTF_8))
+                            val copyBuf = ByteArray(512 * 1024)
+                            context.contentResolver.openFileDescriptor(contentUri, "r")?.use { pfd ->
+                                val fis = FileInputStream(pfd.fileDescriptor)
+                                try {
+                                    android.system.Os.lseek(pfd.fileDescriptor, offset, android.system.OsConstants.SEEK_SET)
+                                } catch (_: Exception) {
+                                    try { fis.channel.position(offset) } catch (_: Exception) {}
+                                }
+                                var remaining = len
+                                while (remaining > 0) {
+                                    val toRead = minOf(copyBuf.size, remaining)
+                                    val r = fis.read(copyBuf, 0, toRead)
+                                    if (r <= 0) break
+                                    outStream.write(copyBuf, 0, r)
+                                    remaining -= r
+                                }
+                            }
+                            outStream.flush()
+                            return
+                        }
+                    }
+
+                    outStream.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                    outStream.flush()
+                    return
+                }
+
+                // STANDARD VAULT PATH FOR MAXBOX & RECEIVED DOWNLOADS
                 val safe = sanitizeKey(effectiveStorageKey)
                 val itemDir = File(getVaultRoot(context), safe)
                 val isCustomKey = effectiveStorageKey != p2pActiveStorageKey
 
                 val activeSegFiles = if (isCustomKey) {
-                    (itemDir.listFiles { _, name ->
+                    val segs = (itemDir.listFiles { _, name ->
                         name.startsWith("seg_") && name.endsWith(".ts")
                     } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
                         it.name.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: 0
                     }
+                    val directMp4 = File(itemDir, "direct.mp4")
+                    if (segs.isEmpty() && directMp4.exists() && directMp4.length() > 0L) listOf(directMp4) else segs
                 } else {
                     segFiles
                 }
@@ -1279,8 +1779,6 @@ object MaxPlayOfflineVault {
                     totalBytes
                 }
 
-                val targetName = reqPath.removePrefix(prefix)
-
                 if (targetName == "manifest.json") {
                     val metaObj = try { JSONObject(p2pActiveMetadataJson) } catch (_: Exception) { JSONObject() }
                     val diskManifest = try {
@@ -1294,6 +1792,8 @@ object MaxPlayOfflineVault {
                         ?: (activeSegFiles.size * 4.0)
                     val isSingleFile = diskManifest?.optBoolean("isSingleFile", activeSegFiles.size == 1)
                         ?: (activeSegFiles.size == 1)
+                    val isDirectMp4 = diskManifest?.optBoolean("isDirectMp4", false) == true ||
+                        File(itemDir, "direct.mp4").exists()
 
                     val manifestJson = JSONObject().apply {
                         put("ok", true)
@@ -1303,6 +1803,7 @@ object MaxPlayOfflineVault {
                         put("totalAudioSegments", activeAudFiles.size)
                         put("totalDurationSec", realDurationSec)
                         put("isSingleFile", isSingleFile)
+                        put("isDirectMp4", isDirectMp4)
                         put("totalBytes", activeTotalBytes)
                         put("metadata", metaObj)
                     }.toString().toByteArray(Charsets.UTF_8)
@@ -1422,8 +1923,7 @@ object MaxPlayOfflineVault {
     /**
      * Streams 100% of all video & audio segments directly from another MaxPlay device over LAN/Hotspot HTTP
      * (`http://senderIp:senderPort/maxplay-p2p/{code}/...`) into this device's native offline vault
-     * (`targetStorageKey`) using 8 parallel continuous batch-stream workers with multi-IP Hotspot discovery,
-     * 1MB I/O buffers, and automatic checkpoint resume so 100MB transfers in ~3-5 seconds at full Wi-Fi speed.
+     * (`targetStorageKey`) using parallel continuous batch-stream workers with multi-IP Hotspot discovery.
      */
     fun receiveDirectTransferFromPeer(
         context: Context,
@@ -1508,6 +2008,8 @@ object MaxPlayOfflineVault {
             val totalAudSegs = validManifest.optInt("totalAudioSegments", 0)
             val totalDur = validManifest.optDouble("totalDurationSec", totalSegs * 4.0)
             val isSingleFile = validManifest.optBoolean("isSingleFile", totalSegs == 1)
+            val isDirectMp4 = validManifest.optBoolean("isDirectMp4", false) ||
+                targetStorageKey.startsWith("dev_vid_")
             val metaObj = validManifest.optJSONObject("metadata") ?: JSONObject()
             val langLabel = metaObj.optString("language", "Default")
 
@@ -1537,10 +2039,14 @@ object MaxPlayOfflineVault {
                 }
             }
 
-            // Group segments into contiguous batches of 40 segments for zero-overhead continuous TCP streaming
+            // Group segments into contiguous batches (smaller batches of 4 for 4MB local video chunks so all 12 workers run in parallel!)
             data class P2pBatchJob(val isAudio: Boolean, val startIdx: Int, val endIdx: Int)
             val batchJobs = java.util.concurrent.ConcurrentLinkedQueue<P2pBatchJob>()
-            val batchSize = if (totalSegs == 1) 1 else 40
+            val batchSize = when {
+                totalSegs == 1 -> 1
+                isDirectMp4 -> 4
+                else -> 40
+            }
 
             var sIdx = 0
             while (sIdx < totalSegs) {
@@ -1567,7 +2073,6 @@ object MaxPlayOfflineVault {
                             val prefix = if (batch.isAudio) "aud_" else "seg_"
                             val typeParam = if (batch.isAudio) "aud" else "seg"
 
-                            // Skip any segments at the start of this batch that were already saved on disk
                             var curStart = batch.startIdx
                             while (curStart <= batch.endIdx) {
                                 val existing = File(itemDir, "${prefix}${curStart}.ts")
@@ -1587,7 +2092,6 @@ object MaxPlayOfflineVault {
                             var batchCompleted = false
                             for (attempt in 0 until 5) {
                                 if (firstError.get() != null) break
-                                // Advance curStart past any segments written before a mid-batch network hiccup
                                 while (curStart <= batch.endIdx) {
                                     val existing = File(itemDir, "${prefix}${curStart}.ts")
                                     if (existing.exists() && existing.length() > 512L) {
@@ -1646,14 +2150,13 @@ object MaxPlayOfflineVault {
                                 }
                             }
 
-                            // Per-segment fallback if the sender APK is an older version without /batch or if batch had a hiccup
                             if (!batchCompleted && firstError.get() == null) {
                                 for (segIdx in curStart..batch.endIdx) {
                                     if (firstError.get() != null) break
                                     val destFile = File(itemDir, "${prefix}${segIdx}.ts")
                                     if (destFile.exists() && destFile.length() > 512L) continue
 
-                                    val segUrl = "$baseUrl/${prefix}${segIdx}.ts"
+                                    val segUrl = "$baseUrl/${prefix}${segIdx}.ts?key=$encodedTargetKey"
                                     var segOk = false
                                     for (attempt in 0 until 5) {
                                         if (firstError.get() != null) break
@@ -1709,15 +2212,58 @@ object MaxPlayOfflineVault {
             latch.await()
             firstError.get()?.let { throw it }
 
-            saveDownloadManifest(
-                context = context,
-                storageKey = targetStorageKey,
-                totalSegments = totalSegs,
-                totalDurationSec = totalDur,
-                isSingleFile = isSingleFile,
-                totalAudioSegments = totalAudSegs,
-                languageLabel = langLabel
-            )
+            // If a local phone video (MP4/MKV/WebM) was transferred in 4MB chunks, assemble into direct.mp4
+            // so HTML5 <video> plays it natively with full byte-range seeking!
+            if (isDirectMp4) {
+                onProgress(98, "Finalizing local video file...")
+                val directMp4Tmp = File(itemDir, "direct.mp4.tmp")
+                val directMp4File = File(itemDir, "direct.mp4")
+                val copyBuf = ByteArray(512 * 1024)
+                FileOutputStream(directMp4Tmp).use { fos ->
+                    for (idx in 0 until totalSegs) {
+                        val segFile = File(itemDir, "seg_${idx}.ts")
+                        if (segFile.exists() && segFile.length() > 0L) {
+                            FileInputStream(segFile).use { fis ->
+                                var r: Int
+                                while (fis.read(copyBuf).also { r = it } != -1) {
+                                    fos.write(copyBuf, 0, r)
+                                }
+                            }
+                        }
+                    }
+                    fos.flush()
+                }
+                if (directMp4Tmp.exists() && directMp4Tmp.length() > 0L) {
+                    if (directMp4File.exists()) directMp4File.delete()
+                    directMp4Tmp.renameTo(directMp4File)
+                    // Clean up temporary 4MB chunk files to avoid doubling disk usage
+                    for (idx in 0 until totalSegs) {
+                        try { File(itemDir, "seg_${idx}.ts").delete() } catch (_: Exception) {}
+                    }
+                }
+                val metaFile = File(itemDir, "manifest.json")
+                val json = JSONObject().apply {
+                    put("storageKey", targetStorageKey)
+                    put("totalSegments", 1)
+                    put("totalAudioSegments", 0)
+                    put("languageLabel", langLabel)
+                    put("totalDurationSec", totalDur)
+                    put("isSingleFile", true)
+                    put("isDirectMp4", true)
+                    put("updatedAt", System.currentTimeMillis())
+                }
+                metaFile.writeText(json.toString())
+            } else {
+                saveDownloadManifest(
+                    context = context,
+                    storageKey = targetStorageKey,
+                    totalSegments = totalSegs,
+                    totalDurationSec = totalDur,
+                    isSingleFile = isSingleFile,
+                    totalAudioSegments = totalAudSegs,
+                    languageLabel = langLabel
+                )
+            }
 
             onProgress(100, "Transfer Complete!")
             out.put("ok", true)
@@ -1745,10 +2291,15 @@ object MaxPlayOfflineVault {
                 return out
             }
 
-            val segFiles = (itemDir.listFiles { _, name ->
-                name.startsWith("seg_") && name.endsWith(".ts")
-            } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
-                it.name.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: 0
+            val directMp4 = File(itemDir, "direct.mp4")
+            val segFiles = if (directMp4.exists() && directMp4.length() > 0L) {
+                listOf(directMp4)
+            } else {
+                (itemDir.listFiles { _, name ->
+                    name.startsWith("seg_") && name.endsWith(".ts")
+                } ?: emptyArray()).filter { it.length() > 0L }.sortedBy {
+                    it.name.removePrefix("seg_").removeSuffix(".ts").toIntOrNull() ?: 0
+                }
             }
 
             if (segFiles.isEmpty()) {

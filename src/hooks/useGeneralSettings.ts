@@ -187,6 +187,9 @@ export function useGeneralSettings() {
   const [settingsForceUpdate, setSettingsForceUpdate] = useState<boolean>(false);
   const [settingsMinRequiredVersion, setSettingsMinRequiredVersion] = useState<string>('');
   const [settingsReleaseNotes, setSettingsReleaseNotes] = useState<string>('');
+  const [settingsUpdateActive, setSettingsUpdateActive] = useState<boolean>(true);
+  const [settingsRedBlinkEnabled, setSettingsRedBlinkEnabled] = useState<boolean>(true);
+  const [withdrawnVersions, setWithdrawnVersions] = useState<string[]>([]);
 
   // Announcements from Admin Panel (`messages` collection)
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -194,6 +197,16 @@ export function useGeneralSettings() {
 
   useEffect(() => {
     const applyUpdateConfigFields = (data: Record<string, any>, isDedicatedUpdateDoc: boolean) => {
+      if (data.updateActive !== undefined) {
+        setSettingsUpdateActive(Boolean(data.updateActive));
+      }
+      if (data.redBlinkEnabled !== undefined) {
+        setSettingsRedBlinkEnabled(Boolean(data.redBlinkEnabled));
+      }
+      if (Array.isArray(data.withdrawnVersions)) {
+        setWithdrawnVersions(data.withdrawnVersions.map((v: any) => cleanVersionDigits(String(v))).filter(Boolean));
+      }
+
       // Dedicated update fields
       const dedicatedVer =
         data.apkVersion ||
@@ -201,19 +214,18 @@ export function useGeneralSettings() {
         data.updateVersion ||
         (isDedicatedUpdateDoc ? data.appVersion || data.version : '') ||
         '';
-      if (dedicatedVer) {
-        setSettingsLatestVersion(String(dedicatedVer).trim());
+      if (dedicatedVer !== undefined && (dedicatedVer || isDedicatedUpdateDoc)) {
+        setSettingsLatestVersion(String(dedicatedVer || '').trim());
       }
 
       const link =
-        data.apkUrl ||
-        data.apkDownloadUrl ||
-        data.apkLink ||
-        data.updateUrl ||
-        data.downloadUrl ||
-        '';
-      if (link) {
-        setGeneralDownloadUrl(String(link).trim());
+        data.apkUrl ??
+        data.apkDownloadUrl ??
+        data.apkLink ??
+        data.updateUrl ??
+        data.downloadUrl;
+      if (link !== undefined) {
+        setGeneralDownloadUrl(String(link || '').trim());
       }
 
       if (
@@ -226,19 +238,18 @@ export function useGeneralSettings() {
         );
       }
 
-      const minVer = data.minRequiredVersion || data.minVersion || '';
-      if (minVer) {
-        setSettingsMinRequiredVersion(String(minVer).trim());
+      const minVer = data.minRequiredVersion ?? data.minVersion;
+      if (minVer !== undefined) {
+        setSettingsMinRequiredVersion(String(minVer || '').trim());
       }
 
       const notes =
-        data.updateNotes ||
-        data.releaseNotes ||
-        data.updateMessage ||
-        data.apkDescription ||
-        '';
-      if (notes) {
-        setSettingsReleaseNotes(String(notes).trim());
+        data.updateNotes ??
+        data.releaseNotes ??
+        data.updateMessage ??
+        data.apkDescription;
+      if (notes !== undefined) {
+        setSettingsReleaseNotes(String(notes || '').trim());
       }
     };
 
@@ -305,6 +316,9 @@ export function useGeneralSettings() {
 
   // Manual trigger to re-verify update status from Firestore on demand (used by Me -> Settings -> Check update)
   const triggerManualUpdateCheck = useCallback(async () => {
+    let computedHasUpdate = false;
+    let computedLatestVer = cleanVersionDigits(installedAppVersion) || '2.5.0';
+    const currentCleanVer = cleanVersionDigits(installedAppVersion) || '2.5.0';
     try {
       const [genSnap, updSnap, msgSnap] = await Promise.allSettled([
         getDoc(doc(db, 'settings', 'general')),
@@ -312,16 +326,43 @@ export function useGeneralSettings() {
         getDocs(collection(db, MESSAGES_COLLECTION)),
       ]);
 
+      let baseVer = installedAppVersion;
+      let activeFlag = settingsUpdateActive;
       if (genSnap.status === 'fulfilled' && genSnap.value.exists()) {
         const d = genSnap.value.data();
-        if (d.appVersion) setInstalledAppVersion(formatVersionTag(String(d.appVersion)));
-        if (d.downloadUrl || d.apkUrl) setGeneralDownloadUrl(String(d.downloadUrl || d.apkUrl).trim());
+        if (d.appVersion) {
+          baseVer = formatVersionTag(String(d.appVersion));
+          setInstalledAppVersion(baseVer);
+        }
+        if (d.downloadUrl !== undefined || d.apkUrl !== undefined) {
+          setGeneralDownloadUrl(String(d.downloadUrl || d.apkUrl || '').trim());
+        }
+        if (d.updateActive !== undefined) {
+          activeFlag = Boolean(d.updateActive);
+          setSettingsUpdateActive(activeFlag);
+        }
+        if (d.redBlinkEnabled !== undefined) {
+          setSettingsRedBlinkEnabled(Boolean(d.redBlinkEnabled));
+        }
       }
       if (updSnap.status === 'fulfilled' && updSnap.value.exists()) {
         const d = updSnap.value.data();
-        const ver = d.apkVersion || d.latestVersion || d.updateVersion || d.appVersion || d.version;
-        if (ver) setSettingsLatestVersion(String(ver).trim());
-        if (d.downloadUrl || d.apkUrl) setGeneralDownloadUrl(String(d.downloadUrl || d.apkUrl).trim());
+        const ver = d.apkVersion || d.latestVersion || d.updateVersion || d.appVersion || d.version || '';
+        setSettingsLatestVersion(String(ver).trim());
+        if (d.downloadUrl !== undefined || d.apkUrl !== undefined) {
+          setGeneralDownloadUrl(String(d.downloadUrl || d.apkUrl || '').trim());
+        }
+        if (d.updateActive !== undefined) {
+          activeFlag = Boolean(d.updateActive);
+          setSettingsUpdateActive(activeFlag);
+        }
+        if (d.redBlinkEnabled !== undefined) {
+          setSettingsRedBlinkEnabled(Boolean(d.redBlinkEnabled));
+        }
+        if (activeFlag && ver && isVersionNewer(String(ver), baseVer)) {
+          computedHasUpdate = true;
+          computedLatestVer = cleanVersionDigits(String(ver));
+        }
       }
       if (msgSnap.status === 'fulfilled') {
         const list = msgSnap.value.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
@@ -329,11 +370,16 @@ export function useGeneralSettings() {
       }
       setLastCheckedAt(Date.now());
     } catch {}
-  }, []);
+    return {
+      hasUpdate: computedHasUpdate,
+      latestVer: computedLatestVer,
+      currentVer: currentCleanVer,
+    };
+  }, [installedAppVersion, settingsUpdateActive]);
 
   // Evaluate Admin Messages (newest-first) against the version in Me -> Settings -> Check Update (`installedAppVersion`)
   let matchedAdminUpdateMsg: AdminUpdateMessageInfo | null = null;
-  if (announcements.length > 0) {
+  if (settingsUpdateActive && announcements.length > 0) {
     const sorted = [...announcements].sort((a, b) => {
       const tA = new Date(a.createdAt || a.date || 0).getTime() || 0;
       const tB = new Date(b.createdAt || b.date || 0).getTime() || 0;
@@ -341,7 +387,13 @@ export function useGeneralSettings() {
     });
 
     for (const msg of sorted) {
+      if (msg.isWithdrawn === true || msg.updateActive === false || msg.recalled === true) {
+        continue;
+      }
       const msgVer = extractVersionFromAdminMessage(msg);
+      if (msgVer && withdrawnVersions.includes(cleanVersionDigits(msgVer))) {
+        continue;
+      }
       if (msgVer && isVersionNewer(msgVer, installedAppVersion)) {
         if (!matchedAdminUpdateMsg || isVersionNewer(msgVer, matchedAdminUpdateMsg.version)) {
           const attachedImg =
@@ -352,7 +404,7 @@ export function useGeneralSettings() {
             msg.attachedContent?.posterUrl ||
             '';
           matchedAdminUpdateMsg = {
-            id: msg.id || `upd_${ msgVer }`,
+            id: msg.id || `upd_${msgVer}`,
             version: msgVer,
             formattedVersion: formatVersionTag(msgVer),
             title: msg.title || `MaxPlay APK Update ${formatVersionTag(msgVer)}`,
@@ -372,10 +424,14 @@ export function useGeneralSettings() {
     }
   }
 
-  // Combine with dedicated settings/update if higher than installedAppVersion
-  const hasSettingsNewer = isVersionNewer(settingsLatestVersion, installedAppVersion);
-  const hasMessageNewer = Boolean(matchedAdminUpdateMsg);
-  const hasApkUpdate = hasMessageNewer || hasSettingsNewer;
+  // Combine with dedicated settings/update if higher than installedAppVersion AND updateActive is true
+  const hasSettingsNewer =
+    settingsUpdateActive &&
+    !withdrawnVersions.includes(cleanVersionDigits(settingsLatestVersion)) &&
+    isVersionNewer(settingsLatestVersion, installedAppVersion);
+  const hasMessageNewer = settingsUpdateActive && Boolean(matchedAdminUpdateMsg);
+  const hasApkUpdate = settingsUpdateActive && (hasMessageNewer || hasSettingsNewer);
+  const isRedBlinkActive = hasApkUpdate && settingsRedBlinkEnabled;
 
   let latestApkVersion = '';
   if (matchedAdminUpdateMsg && hasSettingsNewer) {
@@ -403,9 +459,10 @@ export function useGeneralSettings() {
   const updateBannerUrl = matchedAdminUpdateMsg?.bannerUrl || '';
 
   const isForceUpdateRequired =
-    (hasMessageNewer && Boolean(matchedAdminUpdateMsg?.isForceUpdate)) ||
-    (hasApkUpdate && settingsForceUpdate) ||
-    (Boolean(settingsMinRequiredVersion) && isVersionNewer(settingsMinRequiredVersion, installedAppVersion));
+    settingsUpdateActive &&
+    ((hasMessageNewer && Boolean(matchedAdminUpdateMsg?.isForceUpdate)) ||
+      (hasApkUpdate && settingsForceUpdate) ||
+      (Boolean(settingsMinRequiredVersion) && isVersionNewer(settingsMinRequiredVersion, installedAppVersion)));
 
   return {
     maintenanceMode,
@@ -418,6 +475,9 @@ export function useGeneralSettings() {
     apkDownloadUrl,
     shareDownloadUrl: shareDownloadUrlState || generalDownloadUrl || apkDownloadUrl || '',
     hasApkUpdate,
+    isRedBlinkActive,
+    redBlinkEnabled: settingsRedBlinkEnabled,
+    updateActive: settingsUpdateActive,
     forceUpdate: isForceUpdateRequired,
     updateTitle,
     updateReleaseNotes,

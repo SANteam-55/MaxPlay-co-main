@@ -3176,7 +3176,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
 
         {/* 4 HORIZONTAL PILL ACTION BUTTONS (+ My List, Share, Download, Server 1) */}
         <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar scrollbar-none py-0.5 mb-4">
-          {/* 1. + My List */}
+          {/* 1. + My List (Fixed size, dark background in both states, no green color) */}
           <button 
             id="action-btn-my-list"
             type="button"
@@ -3184,18 +3184,14 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
               adManager.handleActionDockClick(!!user?.isPremium);
               handleMyListToggle();
             }}
-            className={`shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full text-[13px] font-medium transition-colors cursor-pointer active:scale-95 ${
-              isMyList 
-                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300' 
-                : 'bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb]'
-            }`}
+            className="shrink-0 flex items-center justify-center gap-1.5 h-[38px] w-[108px] px-3 rounded-full bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] text-[12.5px] font-medium transition-colors cursor-pointer active:scale-95 whitespace-nowrap"
           >
             {isMyList ? (
-              <Check className="w-4 h-4 text-emerald-400 stroke-[2.5] shrink-0" />
+              <Check className="w-3.5 h-3.5 text-white stroke-[2.5] shrink-0" />
             ) : (
               <Plus className="w-4 h-4 text-[#b0b3b8] stroke-[2] shrink-0" />
             )}
-            <span>{isMyList ? 'In My List' : 'My List'}</span>
+            <span className="truncate">{isMyList ? 'In My List' : 'My List'}</span>
           </button>
 
           {/* 2. Share */}
@@ -3251,17 +3247,21 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             );
           })()}
 
-          {/* 4. Server 1 / Server 2 */}
+          {/* 4. Server 1 (Purple Gradient) / Server 2 (Gold Gradient) */}
           <button 
             type="button"
             onClick={() => {
               adManager.handleActionDockClick(!!user?.isPremium);
               setIsServerModalOpen(true);
             }}
-            className="shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full bg-[#1e2029] hover:bg-[#262936] text-[#e4e6eb] text-[13px] font-medium transition-colors cursor-pointer active:scale-95"
+            className={`shrink-0 flex items-center justify-center gap-2 h-[38px] px-4 rounded-full text-[13px] font-bold transition-all cursor-pointer active:scale-95 border ${
+              selectedServer === 'server2'
+                ? 'bg-gradient-to-r from-[#F59E0B] via-[#D97706] to-[#B45309] text-black border-amber-300/60 shadow-md shadow-amber-950/50'
+                : 'bg-gradient-to-r from-[#8B5CF6] via-[#7C3AED] to-[#5B21B6] text-white border-purple-400/50 shadow-md shadow-purple-950/50'
+            }`}
             title="Switch Streaming Server (Server 1 / Server 2)"
           >
-            <Server className="w-4 h-4 text-[#b0b3b8] stroke-[2] shrink-0" />
+            <Server className={`w-4 h-4 shrink-0 stroke-[2.2] ${selectedServer === 'server2' ? 'text-black' : 'text-purple-100'}`} />
             <span>{selectedServer === 'server2' ? 'Server 2' : 'Server 1'}</span>
           </button>
         </div>
@@ -4103,7 +4103,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             </div>
 
             <div className="space-y-2.5">
-              {/* Server 1 */}
+              {/* Server 1 (Always Purple Gradient Identity) */}
               {(() => {
                 const isSelected = selectedServer === 'server1';
                 const hasPrimary = Boolean(primaryServerUrl);
@@ -4118,32 +4118,28 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                     }}
                     className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer text-left ${
                       isSelected
-                        ? 'bg-gradient-to-r from-purple-600/25 via-indigo-600/15 to-[#181822] border-purple-500 ring-1 ring-purple-500/50 shadow-lg shadow-purple-950/40'
-                        : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                        ? 'bg-gradient-to-r from-[#8B5CF6]/35 via-[#6D28D9]/25 to-[#181822] border-[#8B5CF6] ring-1 ring-[#8B5CF6]/60 shadow-lg shadow-purple-950/50'
+                        : 'bg-gradient-to-r from-[#8B5CF6]/15 via-[#6D28D9]/10 to-[#14141d] border-purple-500/35 hover:border-purple-400/60'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-xs border ${
-                        isSelected
-                          ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-900/50'
-                          : 'bg-white/5 text-purple-300 border-white/10'
-                      }`}>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-xs border bg-gradient-to-br from-[#8B5CF6] to-[#6D28D9] text-white border-purple-300/50 shadow-md shadow-purple-900/50">
                         S1
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs sm:text-sm font-extrabold text-white truncate">
+                          <span className="text-xs sm:text-sm font-extrabold text-purple-200 truncate">
                             Server 1
                           </span>
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                             hasPrimary
-                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                              ? 'bg-purple-500/20 text-purple-200 border-purple-400/40'
                               : 'bg-white/10 text-white/50 border-white/15'
                           }`}>
                             {hasPrimary ? 'Ready' : 'Not configured'}
                           </span>
                         </div>
-                        <p className="text-[11px] text-white/55 mt-0.5 truncate">
+                        <p className="text-[11px] text-purple-200/70 mt-0.5 truncate">
                           {hasPrimary
                             ? 'High-Speed Primary Multi-Audio & Auto Quality Stream'
                             : 'Server 1 is not configured for this title'}
@@ -4152,11 +4148,11 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                     </div>
                     <div className="shrink-0 ml-2">
                       {isSelected ? (
-                        <div className="w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center text-white shadow-sm">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] flex items-center justify-center text-white shadow-sm">
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         </div>
                       ) : (
-                        <span className="text-[10px] font-bold text-white/40 px-2 py-1 rounded-lg bg-white/5">
+                        <span className="text-[10px] font-bold text-purple-200 px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-400/30">
                           Select
                         </span>
                       )}
@@ -4165,7 +4161,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                 );
               })()}
 
-              {/* Server 2 */}
+              {/* Server 2 (Always Gold/Amber Gradient Identity) */}
               {(() => {
                 const isSelected = selectedServer === 'server2';
                 const hasSecondary = Boolean(secondaryServerUrl || Object.keys(secondaryServerQualityLinks).length > 0);
@@ -4192,32 +4188,28 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                     }}
                     className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer text-left ${
                       isSelected
-                        ? 'bg-gradient-to-r from-amber-500/25 via-orange-600/15 to-[#181822] border-amber-500 ring-1 ring-amber-500/50 shadow-lg shadow-amber-950/40'
-                        : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                        ? 'bg-gradient-to-r from-[#F59E0B]/35 via-[#D97706]/25 to-[#181822] border-[#F59E0B] ring-1 ring-[#F59E0B]/60 shadow-lg shadow-amber-950/50'
+                        : 'bg-gradient-to-r from-[#F59E0B]/15 via-[#D97706]/10 to-[#14141d] border-amber-500/35 hover:border-amber-400/60'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-xs border ${
-                        isSelected
-                          ? 'bg-amber-500 text-black border-amber-300 shadow-md shadow-amber-900/50'
-                          : 'bg-white/5 text-amber-300 border-white/10'
-                      }`}>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-xs border bg-gradient-to-br from-[#F59E0B] to-[#D97706] text-black border-amber-300/60 shadow-md shadow-amber-900/50">
                         S2
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs sm:text-sm font-extrabold text-white truncate">
+                          <span className="text-xs sm:text-sm font-extrabold text-amber-200 truncate">
                             Server 2
                           </span>
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                             hasSecondary || isPrimaryAlreadyBackupCompatible
-                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                              ? 'bg-amber-500/20 text-amber-200 border-amber-400/40'
                               : 'bg-white/10 text-white/50 border-white/15'
                           }`}>
                             {hasSecondary || isPrimaryAlreadyBackupCompatible ? 'Ready' : 'Not configured'}
                           </span>
                         </div>
-                        <p className="text-[11px] text-white/55 mt-0.5 truncate">
+                        <p className="text-[11px] text-amber-200/70 mt-0.5 truncate">
                           {hasSecondary || isPrimaryAlreadyBackupCompatible
                             ? 'Turbo Backup High-Speed Multi-Audio HLS Stream'
                             : 'Server 2 is not configured for this title'}
@@ -4226,11 +4218,11 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
                     </div>
                     <div className="shrink-0 ml-2">
                       {isSelected ? (
-                        <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center text-black shadow-sm">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-r from-[#F59E0B] to-[#D97706] flex items-center justify-center text-black shadow-sm">
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         </div>
                       ) : (
-                        <span className="text-[10px] font-bold text-white/40 px-2 py-1 rounded-lg bg-white/5">
+                        <span className="text-[10px] font-bold text-amber-200 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30">
                           Select
                         </span>
                       )}

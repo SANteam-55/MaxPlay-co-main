@@ -4,7 +4,6 @@ import {
   Trash2,
   HardDrive,
   CheckCircle2,
-  Tv,
 } from 'lucide-react';
 import { DownloadedFile } from '../../services/DownloadManager';
 
@@ -75,17 +74,11 @@ export const SeriesFolderCard: React.FC<SeriesFolderCardProps> = ({
           decoding="async"
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
-        <div className="absolute top-1.5 left-1.5 flex items-center justify-center rounded-md bg-black/70 backdrop-blur-xs p-1 border border-white/10">
-          <Tv className="h-3 w-3 text-[#A78BFA]" />
-        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
       </div>
 
-      {/* Series Title & Metadata (No Ep 1 / Ep 2 clutter on card) */}
+      {/* Series Title & Metadata (Only Series Name, Total Videos, and Storage) */}
       <div className="flex flex-1 flex-col justify-center min-w-0 pr-1 text-left">
-        <span className="inline-flex w-fit items-center gap-1 rounded-md bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 px-2 py-0.5 text-[9.5px] font-extrabold uppercase tracking-wider text-[#C4B5FD] mb-1">
-          Series Collection
-        </span>
         <h4 className="text-sm sm:text-base font-extrabold text-white truncate max-w-[230px] sm:max-w-xs group-hover:text-purple-300 transition-colors">
           {seriesTitle}
         </h4>

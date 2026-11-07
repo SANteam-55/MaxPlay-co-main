@@ -963,7 +963,7 @@ class MaxPlayNativeBridge(
 
     @JavascriptInterface
     fun getOfflinePlaybackUrl(storageKey: String): String {
-        return MaxPlayOfflineVault.getLocalPlaybackUrl(storageKey)
+        return MaxPlayOfflineVault.getLocalPlaybackUrl(storageKey, activity.applicationContext)
     }
 
     @JavascriptInterface

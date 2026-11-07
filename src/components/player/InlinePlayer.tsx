@@ -2120,6 +2120,18 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
               lastTimeStateUpdateRef.current = now;
               setCurrentTime(t);
             }
+            // Reset decode error counter once video is playing smoothly
+            if (decodeErrorRetryCountRef.current > 0 && !e.currentTarget.paused && t > 0.5) {
+              decodeErrorRetryCountRef.current = 0;
+            }
+            // If a local video reaches within 0.45s of the very end and stalls/pauses due to trailing audio frame truncation, complete cleanly
+            if (
+              d > 5 &&
+              t >= d - 0.45 &&
+              (activeVideoUrl.includes('/device-video/') || activeVideoUrl.includes('/vault-video/') || activeVideoUrl.startsWith('blob:'))
+            ) {
+              setIsLoading(false);
+            }
             // Ignore time updates during initial seek phase if time is near 0 but target was > 2
             if (targetSeekTimeRef.current > 2 && t < 1 && !isInitialSeekDoneRef.current) {
               return;
@@ -2138,6 +2150,7 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
           onPlaying={() => setIsLoading(false)}
           onEnded={() => {
             setIsPlaying(false);
+            setIsLoading(false);
             setShowControls(true);
             const d = videoRef.current?.duration || duration || 0;
             onProgress?.(currentTime, true, d);
@@ -2147,68 +2160,116 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
           onError={(e: any) => {
             const videoEl = e.currentTarget as HTMLVideoElement | null;
             const err = videoEl?.error;
+            const errMsg = err?.message || '';
             const isDecodeError = Boolean(
-              err && (err.code === 3 || (err.message && err.message.includes('PIPELINE_ERROR_DECODE')))
+              err && (err.code === 3 || errMsg.includes('PIPELINE_ERROR_DECODE'))
             );
+            const isAudioPacketError = errMsg.toLowerCase().includes('audio packet');
 
-            // Auto-recover from hardware MediaCodec / non-keyframe packet decode glitches (PIPELINE_ERROR_DECODE)
-            if (isDecodeError && videoEl && decodeErrorRetryCountRef.current < 4) {
-              decodeErrorRetryCountRef.current += 1;
-              const tsMatch = err?.message?.match(/timestamp=(\d+)/);
+            if (isDecodeError && videoEl) {
+              const tsMatch = errMsg.match(/timestamp=(\d+)/);
               const packetSec = tsMatch ? parseInt(tsMatch[1], 10) / 1_000_000 : 0;
-              const baseSec = Math.max(videoEl.currentTime || 0, currentTime || 0, packetSec);
-              // Step forward past the damaged non-keyframe packet to the next clean GOP/keyframe
-              const safeSkipSec = baseSec + 0.5 * decodeErrorRetryCountRef.current;
+              const vidDur = videoEl.duration || duration || 0;
+              const actualPos =
+                targetSeekTimeRef.current > 0
+                  ? targetSeekTimeRef.current
+                  : packetSec > 0
+                  ? packetSec
+                  : videoEl.currentTime || currentTime || 0;
 
-              console.warn(
-                `[InlinePlayer] Auto-recovering from Decode Error (#${decodeErrorRetryCountRef.current}) at ${baseSec.toFixed(2)}s -> skipping to ${safeSkipSec.toFixed(2)}s`
-              );
+              // 1. If decode error happens at the very end of the video (trailing truncated audio/video packet),
+              // finish the video cleanly instead of throwing an error or looping!
+              if (vidDur > 4 && (actualPos >= vidDur - 3.2 || packetSec >= vidDur - 3.2)) {
+                console.warn('[InlinePlayer] Trailing packet decode glitch near EOF; completing playback cleanly.');
+                setPlaybackError(null);
+                setIsLoading(false);
+                setIsPlaying(false);
+                setShowControls(true);
+                onProgress?.(vidDur, true, vidDur);
+                onPause?.(vidDur, vidDur);
+                onComplete?.();
+                return;
+              }
 
-              setPlaybackError(null);
-              setIsLoading(true);
-              targetSeekTimeRef.current = safeSkipSec;
-              isInitialSeekDoneRef.current = false;
+              // 2. Auto-recover from seek/drag audio or video packet decode errors (up to 6 retries)
+              if (decodeErrorRetryCountRef.current < 6) {
+                decodeErrorRetryCountRef.current += 1;
+                const retryNum = decodeErrorRetryCountRef.current;
+                // Advance past the damaged GOP/packet (1.2s per retry) so demuxer lands on the next clean keyframe
+                const rawSkipSec = actualPos + 1.2 * retryNum;
+                const safeSkipSec =
+                  vidDur > 3 ? Math.min(vidDur - 1.0, Math.max(0.2, rawSkipSec)) : Math.max(0.2, rawSkipSec);
 
-              try {
-                // Release any lingering background video decoders in other tabs
-                document.querySelectorAll('video').forEach((v) => {
-                  if (v !== videoEl) {
-                    try {
-                      v.pause();
-                    } catch {}
-                  }
-                });
-              } catch {}
+                console.warn(
+                  `[InlinePlayer] Auto-recovering from Decode Error (#${retryNum}, audio=${isAudioPacketError}) at ${actualPos.toFixed(2)}s -> ${safeSkipSec.toFixed(2)}s`
+                );
 
-              setTimeout(() => {
-                if (!videoRef.current) return;
+                setPlaybackError(null);
+                setIsLoading(true);
+                targetSeekTimeRef.current = safeSkipSec;
+                isInitialSeekDoneRef.current = false;
+
                 try {
-                  const v = videoRef.current;
-                  const cleanBase = activeVideoUrl.split('&_dec_retry=')[0].split('?_dec_retry=')[0];
-                  const sep = cleanBase.includes('?') ? '&' : '?';
-                  v.src = `${cleanBase}${sep}_dec_retry=${decodeErrorRetryCountRef.current}`;
-                  v.load();
-                  const onLoadedMeta = () => {
-                    v.removeEventListener('loadedmetadata', onLoadedMeta);
-                    try {
-                      if (safeSkipSec > 0 && (!v.duration || safeSkipSec < v.duration - 0.5)) {
-                        v.currentTime = safeSkipSec;
-                      }
-                    } catch {}
-                    v.play()
-                      .then(() => {
-                        setIsPlaying(true);
-                        setHasStarted(true);
-                        setIsLoading(false);
-                      })
-                      .catch(() => {
-                        setIsLoading(false);
-                      });
-                  };
-                  v.addEventListener('loadedmetadata', onLoadedMeta);
+                  document.querySelectorAll('video').forEach((v) => {
+                    if (v !== videoEl) {
+                      try {
+                        v.pause();
+                        v.removeAttribute('src');
+                        v.load();
+                      } catch {}
+                    }
+                  });
                 } catch {}
-              }, 120);
-              return;
+
+                setTimeout(() => {
+                  const v = videoRef.current;
+                  if (!v) return;
+                  try {
+                    // If audio packet decoding repeatedly fails on a corrupt local audio track (retry >= 3),
+                    // disable broken audio tracks or mute to prevent FFmpegAudioDecoder from aborting video pipeline
+                    if (isAudioPacketError && retryNum >= 3) {
+                      try {
+                        const aTracks = (v as any).audioTracks;
+                        if (aTracks && aTracks.length > 0) {
+                          for (let i = 0; i < aTracks.length; i++) {
+                            aTracks[i].enabled = false;
+                          }
+                        }
+                      } catch {}
+                    }
+
+                    const cleanBase = (resolvedStreamUrl || activeVideoUrl)
+                      .split('&_dec_retry=')[0]
+                      .split('?_dec_retry=')[0];
+                    const sep = cleanBase.includes('?') ? '&' : '?';
+                    v.src = cleanBase.startsWith('blob:')
+                      ? cleanBase
+                      : `${cleanBase}${sep}_dec_retry=${retryNum}_${Date.now()}`;
+                    v.load();
+
+                    const onLoadedMeta = () => {
+                      v.removeEventListener('loadedmetadata', onLoadedMeta);
+                      try {
+                        if (safeSkipSec > 0 && (!v.duration || safeSkipSec < v.duration - 0.4)) {
+                          v.currentTime = safeSkipSec;
+                        }
+                      } catch {}
+                      v.play()
+                        .then(() => {
+                          setIsPlaying(true);
+                          setHasStarted(true);
+                          setIsLoading(false);
+                          targetSeekTimeRef.current = 0;
+                        })
+                        .catch(() => {
+                          setIsLoading(false);
+                        });
+                    };
+                    v.addEventListener('loadedmetadata', onLoadedMeta);
+                  } catch {}
+                }, 80);
+                return;
+              }
             }
 
             setIsLoading(false);

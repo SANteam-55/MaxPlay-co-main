@@ -625,9 +625,15 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
       // Start Native LAN P2P HTTP Server on Sender phone (port 48821) if running in APK
       let senderIp = '';
       let senderPort = 48821;
-      if (primaryFile.storageKey && NativeBridgeService.isRunningInKotlinApp()) {
+      const primaryStorageKey =
+        batchItems[0]?.storageKey ||
+        primaryFile.storageKey ||
+        (String(primaryFile.id || '').startsWith('dev_vid_')
+          ? String(primaryFile.id)
+          : `dl_${primaryFile.id}`);
+      if (primaryStorageKey && NativeBridgeService.isRunningInKotlinApp()) {
         const serverRes = NativeBridgeService.startDirectTransferServerNative(
-          primaryFile.storageKey,
+          primaryStorageKey,
           code,
           metadataPayload
         );
@@ -986,13 +992,17 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
         // If a local phone video was transferred, also save/export it to the receiver phone's public Gallery (Movies/MaxPlay)
         if (isLocalSentVideo && NativeBridgeService.isRunningInKotlinApp()) {
           try {
-            (window as any).MaxPlayOfflineVault?.exportOfflineVideoToGallery?.(
+            NativeBridgeService.exportOfflineVideoToGalleryNative(
               targetStorageKey,
               item.title || 'MaxPlay_Video'
             );
             scanPhoneLocalVideos(false);
           } catch {}
         }
+
+        const nativePlayUrl = NativeBridgeService.supportsNativeOfflineVault()
+          ? NativeBridgeService.getOfflinePlaybackUrlNative(targetStorageKey) || undefined
+          : undefined;
 
         downloadManager.addImportedCompletedFile({
           contentId: item.contentId,
@@ -1010,6 +1020,13 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
           category: 'received',
           storageKey: targetStorageKey,
         });
+        if (nativePlayUrl) {
+          const allAfter = downloadManager.getCompletedFiles();
+          const addedItem = allAfter.find((f) => f.storageKey === targetStorageKey);
+          if (addedItem) {
+            addedItem.videoUrl = nativePlayUrl;
+          }
+        }
         receivedCount++;
       }
 
@@ -1499,8 +1516,7 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
       {/* SECTION 4: FOR YOU (REAL CATALOG RECOMMENDATIONS) */}
       <div className="mt-8 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4 text-[#8B5CF6]" />
+          <div className="flex items-center">
             <h3 className="text-sm font-bold text-white">Recommended For You</h3>
           </div>
           <span className="text-[11px] text-[#71717A]">Tap any title to watch or download</span>
@@ -2058,28 +2074,8 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
             </div>
           </div>
 
-          {/* Series Hero Banner + Sequential Episodes List */}
-          <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4 scrollbar-none">
-            <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[#171722] to-[#121218] p-4 border border-white/10 shadow-xl">
-              <img
-                src={activeSeriesFolderPage.posterUrl}
-                alt={activeSeriesFolderPage.seriesTitle}
-                className="h-24 w-16 rounded-xl object-cover border border-white/15 shrink-0 shadow-md"
-              />
-              <div className="flex-1 min-w-0 text-left">
-                <span className="inline-flex items-center gap-1 rounded-md bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 px-2 py-0.5 text-[10px] font-black uppercase text-[#C4B5FD]">
-                  <Tv className="h-3 w-3" />
-                  <span>Maxbox Series</span>
-                </span>
-                <h3 className="mt-1 text-base sm:text-lg font-black text-white truncate">
-                  {activeSeriesFolderPage.seriesTitle}
-                </h3>
-                <p className="mt-1 text-xs text-emerald-400 font-semibold">
-                  Tap any episode below to watch offline in full HD
-                </p>
-              </div>
-            </div>
-
+          {/* Sequential Episodes List (Direct list with vertical series poster thumbnails) */}
+          <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-2.5 scrollbar-none">
             <div className="space-y-2.5">
               {activeSeriesFolderPage.episodes.map((ep, idx) => {
                 const epNum =
@@ -2095,23 +2091,23 @@ export const DownloadsScreen: React.FC<DownloadsScreenProps> = ({ onPlayContent 
                   <div
                     key={ep.id}
                     onClick={() => handlePlayItem(ep, activeSeriesFolderPage.episodes)}
-                    className="flex items-center justify-between gap-3 rounded-2xl bg-[#14141A] hover:bg-[#1B1B24] border border-white/10 hover:border-purple-500/40 p-3.5 transition cursor-pointer group"
+                    className="flex items-center justify-between gap-3 rounded-2xl bg-[#14141A] hover:bg-[#1B1B24] border border-white/10 hover:border-purple-500/40 p-3 transition cursor-pointer group"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="relative h-14 w-24 rounded-xl overflow-hidden bg-black border border-white/10 shrink-0 flex items-center justify-center">
-                        {ep.posterUrl || activeSeriesFolderPage.posterUrl ? (
+                      <div className="relative h-[84px] w-[58px] rounded-xl overflow-hidden bg-black border border-white/10 shrink-0 flex items-center justify-center shadow-md">
+                        {activeSeriesFolderPage.posterUrl || ep.posterUrl ? (
                           <img
-                            src={ep.posterUrl || activeSeriesFolderPage.posterUrl}
+                            src={activeSeriesFolderPage.posterUrl || ep.posterUrl}
                             alt={ep.title}
-                            className="h-full w-full object-cover opacity-85 group-hover:scale-105 transition"
+                            className="h-full w-full object-cover opacity-90 group-hover:scale-105 transition"
                           />
                         ) : null}
-                        <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
-                          <div className="h-8 w-8 rounded-full bg-[#8B5CF6]/90 flex items-center justify-center text-white shadow-md">
-                            <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
+                        <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                          <div className="h-7 w-7 rounded-full bg-[#8B5CF6]/90 flex items-center justify-center text-white shadow-md">
+                            <Play className="h-3 w-3 fill-current ml-0.5" />
                           </div>
                         </div>
-                        <span className="absolute bottom-1 left-1.5 rounded bg-black/80 px-1.5 py-0.2 text-[9.5px] font-black text-white">
+                        <span className="absolute bottom-1 inset-x-1 text-center rounded bg-black/85 px-1 py-0.2 text-[9px] font-black text-white">
                           EP {epNum.toString().padStart(2, '0')}
                         </span>
                       </div>

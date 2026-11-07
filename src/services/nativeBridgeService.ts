@@ -1284,6 +1284,58 @@ export class NativeBridgeService {
   }
 
   /**
+   * Exports a received offline video from the native vault directly to the user's phone Gallery (Movies/MaxPlay).
+   */
+  public static exportOfflineVideoToGalleryNative(
+    storageKey: string,
+    title: string
+  ): { ok: boolean; uri?: string; error?: string } | null {
+    try {
+      if (
+        this.isRunningInKotlinApp() &&
+        typeof (window.MaxPlayNative as any)?.exportOfflineVideoToGallery === 'function'
+      ) {
+        const raw = (window.MaxPlayNative as any).exportOfflineVideoToGallery(storageKey, title);
+        if (raw) {
+          return JSON.parse(raw);
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  /**
+   * Normalizes cloud hosting links (Google Drive, Dropbox, GitHub) into direct binary `.apk` download URLs.
+   */
+  public static normalizeApkDownloadUrl(rawUrl: string): string {
+    const trimmed = (rawUrl || '').trim();
+    if (!trimmed) return '';
+
+    // 1. Google Drive share URL -> direct download URL
+    if (trimmed.includes('drive.google.com') || trimmed.includes('drive.usercontent.google.com')) {
+      const match = trimmed.match(/(?:\/file\/d\/|\/d\/|[?&]id=)([a-zA-Z0-9_-]{15,})/);
+      if (match && match[1]) {
+        return `https://drive.usercontent.google.com/download?id=${match[1]}&export=download&confirm=t`;
+      }
+    }
+
+    // 2. Dropbox share URL -> direct download URL
+    if (trimmed.includes('dropbox.com')) {
+      if (trimmed.includes('dl=0')) return trimmed.replace('dl=0', 'dl=1');
+      if (!trimmed.includes('dl=1') && !trimmed.includes('raw=1')) {
+        return trimmed.includes('?') ? `${trimmed}&dl=1` : `${trimmed}?dl=1`;
+      }
+    }
+
+    // 3. GitHub blob URL -> raw URL
+    if (trimmed.includes('github.com/') && trimmed.includes('/blob/')) {
+      return trimmed.includes('?') ? `${trimmed}&raw=true` : `${trimmed}?raw=true`;
+    }
+
+    return trimmed;
+  }
+
+  /**
    * Triggers the Admin's hidden APK download link behind the Update button.
    * - Inside the Android Kotlin APK: Streams the `.apk` natively with live 0% -> 100% progress
    *   and launches the Android System Package Installer (`application/vnd.android.package-archive`) automatically.
@@ -1295,7 +1347,7 @@ export class NativeBridgeService {
     title: string = 'MaxPlay Official Update',
     onProgress?: (state: ApkUpdateProgressState) => void
   ): void {
-    const cleanUrl = (apkUrl || '').trim();
+    const cleanUrl = this.normalizeApkDownloadUrl(apkUrl);
     if (!cleanUrl) {
       onProgress?.({
         status: 'error',

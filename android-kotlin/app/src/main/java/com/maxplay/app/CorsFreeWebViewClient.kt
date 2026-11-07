@@ -210,7 +210,9 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
         // 2. FAST-PATH BYPASS: Never intercept Firebase, Google APIs, or Images/Posters/Fonts!
         //    Letting Chromium's native C++ HTTP/2 engine & disk cache handle these directly
         //    eliminates worker-thread bottlenecks and makes posters & Firestore data load instantly.
-        if (host.contains("googleapis.com") ||
+        if (host == "127.0.0.1" ||
+            host == "localhost" ||
+            host.contains("googleapis.com") ||
             host.contains("firebaseio.com") ||
             host.contains("firebaseapp.com") ||
             host.contains("gstatic.com") ||

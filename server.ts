@@ -23,6 +23,13 @@ export const TMDB_API_KEY = (process.env.TMDB_API_KEY && process.env.TMDB_API_KE
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "no-referrer-when-downgrade");
+  next();
+});
 app.use(express.json({ limit: "15mb" }));
 
   // Initialize Google GenAI client (Server-Side Only - Secure)

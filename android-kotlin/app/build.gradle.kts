@@ -13,8 +13,8 @@ android {
         applicationId = if (isAdminApp) "com.maxplay.admin" else "com.maxplay.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 26
+        versionName = "2.6.0"
         manifestPlaceholders["appLabel"] = if (isAdminApp) "MaxPlay Admin" else "MaxPlay"
     }
 

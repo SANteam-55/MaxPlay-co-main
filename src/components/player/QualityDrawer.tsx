@@ -139,14 +139,22 @@ export const QualityDrawer: React.FC<QualityDrawerProps> = React.memo(({
                         className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition-all cursor-pointer border ${
                           isActive
                             ? 'bg-[#8B5CF6]/20 border-[#8B5CF6]/50 text-white shadow-md shadow-purple-500/10'
-                            : serverTag
-                            ? 'border-amber-500/25 bg-amber-500/5 text-white/90 hover:bg-amber-500/15 hover:border-amber-400/50'
+                            : serverTag === 'S1'
+                            ? 'border-purple-500/40 bg-gradient-to-r from-[#8B5CF6]/15 to-transparent text-white hover:from-[#8B5CF6]/25'
+                            : serverTag === 'S2'
+                            ? 'border-amber-500/40 bg-gradient-to-r from-[#F59E0B]/15 to-transparent text-white hover:from-[#F59E0B]/25'
                             : 'border-transparent text-[#A1A1AA] hover:bg-[#1C1C1E] hover:text-white'
                         }`}
                       >
                         <div className="flex items-center gap-2">
                           {serverTag && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-500/25 text-amber-300 border border-amber-400/50 shadow-sm">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-black border shadow-sm ${
+                                serverTag === 'S1'
+                                  ? 'bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] text-white border-purple-300/50'
+                                  : 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-black border-amber-300/60'
+                              }`}
+                            >
                               {serverTag}
                             </span>
                           )}
@@ -158,7 +166,9 @@ export const QualityDrawer: React.FC<QualityDrawerProps> = React.memo(({
                         {isActive ? (
                           <Check className="h-4 w-4 text-[#8B5CF6]" />
                         ) : serverTag ? (
-                          <span className="text-[9px] font-bold text-amber-300/80">Switch {serverTag}</span>
+                          <span className={`text-[9px] font-bold ${serverTag === 'S1' ? 'text-purple-300' : 'text-amber-300'}`}>
+                            Switch {serverTag}
+                          </span>
                         ) : null}
                       </button>
                     );

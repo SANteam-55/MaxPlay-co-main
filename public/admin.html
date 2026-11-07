@@ -4028,14 +4028,27 @@
                   </label>
                 </div>
 
-                <!-- Submit & Reset Actions -->
-                <div style="display:flex; gap:12px; flex-wrap:wrap; padding-top:6px;">
-                  <button type="button" id="btn-push-app-update" class="btn-primary" onclick="pushAppUpdateLive()" style="flex:1; height:44px; font-size:13px; font-weight:800; background:linear-gradient(135deg, #EF4444, #F97316); box-shadow:0 8px 20px rgba(239,68,68,0.35);">
-                    <i class="fa-solid fa-rocket"></i> Push APK Update Live &amp; Save Report
-                  </button>
-                  <button type="button" class="btn-secondary" onclick="clearActiveAppUpdate()" style="height:44px; padding:0 16px; font-size:12px; font-weight:700; color:#FCA5A5; border-color:rgba(239,68,68,0.3);" title="Stop Red Blinking Icon &amp; Match Baseline">
-                    <i class="fa-solid fa-circle-stop"></i> Stop Active Update Trigger
-                  </button>
+                <!-- Submit & Full Admin Control Actions -->
+                <div style="display:flex; flex-direction:column; gap:10px; padding-top:6px;">
+                  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button type="button" id="btn-push-app-update" class="btn-primary" onclick="pushAppUpdateLive()" style="flex:1; min-width:220px; height:44px; font-size:13px; font-weight:800; background:linear-gradient(135deg, #EF4444, #F97316); box-shadow:0 8px 20px rgba(239,68,68,0.35);">
+                      <i class="fa-solid fa-rocket"></i> Push APK Update Live &amp; Save Report
+                    </button>
+                    <button type="button" id="btn-toggle-red-blink" class="btn-secondary" onclick="toggleRedBlinkOnlyQuick()" style="height:44px; padding:0 16px; font-size:12px; font-weight:800; color:#FBBF24; border-color:rgba(245,158,11,0.4); background:rgba(245,158,11,0.1);" title="Pause or Resume the Red Blinking Icon on User Apps">
+                      <i class="fa-solid fa-bell-slash"></i> <span id="btn-toggle-red-blink-text">Stop Red Blinking Only</span>
+                    </button>
+                  </div>
+                  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+                    <button type="button" class="btn-secondary" onclick="rollbackActiveAppUpdate()" style="height:40px; padding:0 14px; font-size:11.5px; font-weight:800; color:#38BDF8; border-color:rgba(56,189,248,0.35); background:rgba(56,189,248,0.08);" title="Pull back / recall the current active update and revert to baseline">
+                      <i class="fa-solid fa-rotate-left"></i> Rollback / Pull Back Update
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="clearActiveAppUpdate()" style="height:40px; padding:0 14px; font-size:11.5px; font-weight:800; color:#34D399; border-color:rgba(16,185,129,0.35); background:rgba(16,185,129,0.08);" title="Mark pushed update as current baseline and stop update prompt">
+                      <i class="fa-solid fa-circle-check"></i> Sync to Baseline &amp; Stop Prompt
+                    </button>
+                    <button type="button" class="btn-danger" onclick="deleteCurrentActiveAppUpdate()" style="height:40px; padding:0 14px; font-size:11.5px; font-weight:800;" title="Delete current active update, remove its inbox announcement, and stop red blink">
+                      <i class="fa-solid fa-trash-can"></i> Delete Current Update
+                    </button>
+                  </div>
                 </div>
 
               </div>
@@ -4115,8 +4128,13 @@
                     <i class="fa-solid fa-clipboard-list" style="color:var(--accent-cyan);"></i> Update Release History &amp; Delivery Reports
                   </h3>
                   <p style="font-size:12px; color:var(--text-tertiary); margin:3px 0 0 0;">
-                    Complete log of every update pushed by Admin: tracks previous running version, pushed version, Force/Optional mode, report notes, and hidden APK installer link.
+                    Complete log of every update pushed by Admin: rollback to any version, set baseline, or delete old/current update records.
                   </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <button type="button" class="btn-secondary" onclick="deleteAllOlderUpdateHistory()" style="height:34px; padding:0 12px; font-size:11px; font-weight:800; color:#F87171; border-color:rgba(239,68,68,0.35); background:rgba(239,68,68,0.08);">
+                    <i class="fa-solid fa-broom"></i> Delete All Older Updates
+                  </button>
                 </div>
               </div>
 
@@ -12331,7 +12349,18 @@
         const notes = upd.releaseNotes || upd.changelog || gen.updateReleaseNotes || '';
         const bannerUrl = upd.bannerUrl || gen.updateBannerUrl || '';
 
-        const isRedBlinkActive = window.isSemVerHigher(pushedLatest, runningBaseline) || (isForce && window.isSemVerHigher(minVer, runningBaseline));
+        const updateActive = upd.updateActive !== false && gen.updateActive !== false;
+        const redBlinkEnabled = upd.redBlinkEnabled !== false && gen.redBlinkEnabled !== false;
+        window.currentRedBlinkEnabledState = redBlinkEnabled;
+        window.currentUpdateActiveState = updateActive;
+
+        const hasVersionHigher = window.isSemVerHigher(pushedLatest, runningBaseline) || (isForce && window.isSemVerHigher(minVer, runningBaseline));
+        const isRedBlinkActive = updateActive && redBlinkEnabled && hasVersionHigher;
+
+        const toggleBlinkBtnText = document.getElementById('btn-toggle-red-blink-text');
+        if (toggleBlinkBtnText) {
+          toggleBlinkBtnText.innerText = redBlinkEnabled ? 'Stop Red Blinking Only' : 'Resume Red Blinking';
+        }
 
         // Populate top 4 telemetry cards
         const statBaseEl = document.getElementById('au-stat-baseline');
@@ -12339,13 +12368,17 @@
 
         const statPushedEl = document.getElementById('au-stat-pushed');
         if (statPushedEl) {
-          statPushedEl.innerText = pushedLatest;
+          statPushedEl.innerText = updateActive ? pushedLatest : `${pushedLatest} (PULLED BACK)`;
           statPushedEl.style.color = isRedBlinkActive ? '#F87171' : '#34D399';
         }
 
         const blinkIndEl = document.getElementById('au-stat-blink-indicator');
         if (blinkIndEl) {
-          if (isRedBlinkActive) {
+          if (!updateActive) {
+            blinkIndEl.innerHTML = `<i class="fa-solid fa-ban" style="color:#FBBF24;"></i> <span style="color:#FDE68A;">PULLED BACK: Update Deactivated by Admin</span>`;
+          } else if (!redBlinkEnabled) {
+            blinkIndEl.innerHTML = `<i class="fa-solid fa-bell-slash" style="color:#FBBF24;"></i> <span style="color:#FDE68A;">PAUSED: Red Blink Stopped by Admin</span>`;
+          } else if (isRedBlinkActive) {
             blinkIndEl.innerHTML = `<i class="fa-solid fa-bell" style="color:#EF4444;"></i> <span style="color:#FCA5A5;">ACTIVE: Red Upload Icon Blinking in App!</span>`;
           } else {
             blinkIndEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color:#34D399;"></i> <span style="color:#34D399;">Matches Baseline (Red Icon Idle)</span>`;
@@ -12469,12 +12502,37 @@
       }
     };
 
+    window.normalizeCloudApkDownloadUrl = function(rawUrl) {
+      const trimmed = (rawUrl || '').trim();
+      if (!trimmed) return '';
+      if (trimmed.includes('drive.google.com') || trimmed.includes('drive.usercontent.google.com')) {
+        const m = trimmed.match(/(?:\/file\/d\/|\/d\/|[?&]id=)([a-zA-Z0-9_-]{15,})/);
+        if (m && m[1]) {
+          return `https://drive.usercontent.google.com/download?id=${m[1]}&export=download&confirm=t`;
+        }
+      }
+      if (trimmed.includes('dropbox.com')) {
+        if (trimmed.includes('dl=0')) return trimmed.replace('dl=0', 'dl=1');
+        if (!trimmed.includes('dl=1') && !trimmed.includes('raw=1')) {
+          return trimmed.includes('?') ? `${trimmed}&dl=1` : `${trimmed}?dl=1`;
+        }
+      }
+      if (trimmed.includes('github.com/') && trimmed.includes('/blob/')) {
+        return trimmed.includes('?') ? `${trimmed}&raw=true` : `${trimmed}?raw=true`;
+      }
+      return trimmed;
+    };
+
     window.pushAppUpdateLive = async function() {
       const btn = document.getElementById('btn-push-app-update');
       const runningBaseline = window.formatSemVerTag(document.getElementById('au-current-baseline')?.value || 'v2.5.0');
       const targetVersion = window.formatSemVerTag(document.getElementById('au-target-version')?.value || 'v2.6.0');
       const minVersion = window.formatSemVerTag(document.getElementById('au-min-version')?.value || runningBaseline);
-      const apkUrl = (document.getElementById('au-apk-url')?.value || '').trim();
+      const rawApkUrl = (document.getElementById('au-apk-url')?.value || '').trim();
+      const apkUrl = window.normalizeCloudApkDownloadUrl(rawApkUrl);
+      if (apkUrl && apkUrl !== rawApkUrl && document.getElementById('au-apk-url')) {
+        document.getElementById('au-apk-url').value = apkUrl;
+      }
       const title = (document.getElementById('au-title')?.value || '').trim() || `MaxPlay ${targetVersion} Official APK Update`;
       const releaseNotes = (document.getElementById('au-notes')?.value || '').trim() || `New MaxPlay ${targetVersion} update is now available.`;
       const bannerUrl = (document.getElementById('au-banner-url')?.value || '').trim();
@@ -12506,6 +12564,9 @@
           latestVersion: targetVersion,
           minRequiredVersion: forceUpdate ? targetVersion : minVersion,
           forceUpdate: forceUpdate,
+          updateActive: true,
+          redBlinkEnabled: true,
+          withdrawnVersions: [],
           apkUrl: apkUrl,
           downloadUrl: apkUrl,
           title: title,
@@ -12521,6 +12582,9 @@
           latestUpdateVersion: targetVersion,
           minVersion: forceUpdate ? targetVersion : minVersion,
           forceUpdate: forceUpdate,
+          updateActive: true,
+          redBlinkEnabled: true,
+          withdrawnVersions: [],
           downloadUrl: apkUrl,
           apkUrl: apkUrl,
           updateTitle: title,
@@ -12644,6 +12708,224 @@
       }
     };
 
+    window.toggleRedBlinkOnlyQuick = async function() {
+      const nextState = window.currentRedBlinkEnabledState === false ? true : false;
+      try {
+        const nowIso = new Date().toISOString();
+        await setDoc(doc(db, 'settings', 'update'), {
+          redBlinkEnabled: nextState,
+          updatedAt: nowIso
+        }, { merge: true });
+        await setDoc(doc(db, 'settings', 'general'), {
+          redBlinkEnabled: nextState,
+          updatedAt: nowIso
+        }, { merge: true });
+        showToast(nextState ? '🔔 Red Blinking Indicator RESUMED on all user apps!' : '🔕 Red Blinking Indicator STOPPED across all user apps!');
+        await window.loadAppUpdatesManager();
+      } catch (e) {
+        showToast('Error toggling Red Blink: ' + e.message);
+      }
+    };
+
+    window.rollbackActiveAppUpdate = async function() {
+      const baseVer = window.formatSemVerTag(document.getElementById('au-current-baseline')?.value || 'v2.5.0');
+      const pushedEl = document.getElementById('au-stat-pushed');
+      const currentPushed = window.formatSemVerTag(pushedEl ? pushedEl.innerText : 'v2.6.0');
+      const confirmed = await window.showCustomConfirm(
+        'Rollback / Pull Back Active Update',
+        `Pull back update ${currentPushed} and revert all user apps back to running baseline ${baseVer}? This will also recall any active update notice from user inboxes and stop the red blinking icon.`,
+        { okText: 'Rollback Update Now', cancelText: 'Cancel' }
+      );
+      if (!confirmed) return;
+
+      try {
+        const nowIso = new Date().toISOString();
+        await setDoc(doc(db, 'settings', 'update'), {
+          latestVersion: baseVer,
+          minRequiredVersion: baseVer,
+          forceUpdate: false,
+          updateActive: false,
+          redBlinkEnabled: false,
+          withdrawnVersions: [currentPushed],
+          updatedAt: nowIso
+        }, { merge: true });
+
+        await setDoc(doc(db, 'settings', 'general'), {
+          appVersion: baseVer,
+          latestUpdateVersion: baseVer,
+          minVersion: baseVer,
+          forceUpdate: false,
+          updateActive: false,
+          redBlinkEnabled: false,
+          withdrawnVersions: [currentPushed],
+          updatedAt: nowIso
+        }, { merge: true });
+
+        // Also mark any matching update announcement in `messages` as withdrawn
+        try {
+          const msgSnap = await getDocs(collection(db, 'messages'));
+          const batchPromises = [];
+          msgSnap.forEach(d => {
+            const data = d.data() || {};
+            if (String(d.id).startsWith('apk-update-') || data.appVersion === currentPushed || data.latestVersion === currentPushed) {
+              batchPromises.push(setDoc(doc(db, 'messages', d.id), { isWithdrawn: true, recalled: true, updateActive: false }, { merge: true }));
+            }
+          });
+          if (batchPromises.length > 0) await Promise.all(batchPromises);
+        } catch (_) {}
+
+        if (Array.isArray(window.appUpdateHistoryList) && window.appUpdateHistoryList.length > 0) {
+          window.appUpdateHistoryList[0].status = 'ROLLED BACK';
+          await setDoc(doc(db, 'settings', 'update_history'), {
+            list: window.appUpdateHistoryList,
+            updatedAt: nowIso
+          }, { merge: true });
+        }
+
+        showToast(`⏪ Update ${currentPushed} pulled back! Apps reverted to ${baseVer}.`);
+        await window.loadAppUpdatesManager();
+      } catch (e) {
+        showToast('Error rolling back update: ' + e.message);
+      }
+    };
+
+    window.deleteCurrentActiveAppUpdate = async function() {
+      const baseVer = window.formatSemVerTag(document.getElementById('au-current-baseline')?.value || 'v2.5.0');
+      const pushedEl = document.getElementById('au-stat-pushed');
+      const currentPushed = window.formatSemVerTag(pushedEl ? pushedEl.innerText : 'v2.6.0');
+      const confirmed = await window.showCustomConfirm(
+        'Delete Current Active Update',
+        `Permanently delete the current update (${currentPushed}), remove its announcement from user inboxes, remove it from release history, and stop all update prompts?`,
+        { okText: 'Delete Current Update', cancelText: 'Cancel', icon: 'fa-solid fa-trash-can' }
+      );
+      if (!confirmed) return;
+
+      try {
+        const nowIso = new Date().toISOString();
+        await setDoc(doc(db, 'settings', 'update'), {
+          latestVersion: baseVer,
+          minRequiredVersion: baseVer,
+          forceUpdate: false,
+          updateActive: false,
+          redBlinkEnabled: false,
+          apkUrl: '',
+          downloadUrl: '',
+          title: '',
+          releaseNotes: '',
+          bannerUrl: '',
+          withdrawnVersions: [currentPushed],
+          updatedAt: nowIso
+        }, { merge: true });
+
+        await setDoc(doc(db, 'settings', 'general'), {
+          appVersion: baseVer,
+          latestUpdateVersion: baseVer,
+          minVersion: baseVer,
+          forceUpdate: false,
+          updateActive: false,
+          redBlinkEnabled: false,
+          downloadUrl: '',
+          apkUrl: '',
+          updateTitle: '',
+          updateReleaseNotes: '',
+          updateBannerUrl: '',
+          withdrawnVersions: [currentPushed],
+          updatedAt: nowIso
+        }, { merge: true });
+
+        // Delete matching update announcements from `messages`
+        try {
+          const msgSnap = await getDocs(collection(db, 'messages'));
+          const delPromises = [];
+          msgSnap.forEach(d => {
+            const data = d.data() || {};
+            if (String(d.id).startsWith('apk-update-') || data.appVersion === currentPushed || data.latestVersion === currentPushed) {
+              delPromises.push(deleteDoc(doc(db, 'messages', d.id)));
+            }
+          });
+          if (delPromises.length > 0) await Promise.all(delPromises);
+        } catch (_) {}
+
+        if (Array.isArray(window.appUpdateHistoryList) && window.appUpdateHistoryList.length > 0) {
+          window.appUpdateHistoryList.shift();
+          await setDoc(doc(db, 'settings', 'update_history'), {
+            list: window.appUpdateHistoryList,
+            updatedAt: nowIso
+          }, { merge: true });
+        }
+
+        if (document.getElementById('au-apk-url')) document.getElementById('au-apk-url').value = '';
+        showToast(`🗑️ Current update (${currentPushed}) deleted completely!`);
+        await window.loadAppUpdatesManager();
+      } catch (e) {
+        showToast('Error deleting current update: ' + e.message);
+      }
+    };
+
+    window.deleteAllOlderUpdateHistory = async function() {
+      const list = window.appUpdateHistoryList || [];
+      if (list.length <= 1) {
+        showToast('No older update history records to delete.');
+        return;
+      }
+      const confirmed = await window.showCustomConfirm(
+        'Delete All Older Updates',
+        `Delete all ${list.length - 1} older update history records and keep only the latest entry?`,
+        { okText: 'Delete Older Records', cancelText: 'Cancel', icon: 'fa-solid fa-broom' }
+      );
+      if (!confirmed) return;
+
+      try {
+        window.appUpdateHistoryList = [list[0]];
+        await setDoc(doc(db, 'settings', 'update_history'), {
+          list: window.appUpdateHistoryList,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        window.renderUpdateHistoryTable();
+        const statRelCount = document.getElementById('au-stat-releases-count');
+        if (statRelCount) statRelCount.innerText = '1 Release Logged';
+        showToast('🧹 All older update records deleted!');
+      } catch (e) {
+        showToast('Error deleting older records: ' + e.message);
+      }
+    };
+
+    window.rollbackToHistoryVersion = async function(idx) {
+      const item = (window.appUpdateHistoryList || [])[idx];
+      if (!item) return;
+      const targetVer = window.formatSemVerTag(item.previousVersion || item.pushedVersion || 'v2.5.0');
+      const confirmed = await window.showCustomConfirm(
+        'Rollback to Version ' + targetVer,
+        `Revert Running Baseline & Latest Version to ${targetVer} and stop active update alerts?`,
+        { okText: 'Rollback to ' + targetVer, cancelText: 'Cancel' }
+      );
+      if (!confirmed) return;
+
+      try {
+        const nowIso = new Date().toISOString();
+        await setDoc(doc(db, 'settings', 'general'), {
+          appVersion: targetVer,
+          latestUpdateVersion: targetVer,
+          forceUpdate: false,
+          updateActive: false,
+          redBlinkEnabled: false,
+          updatedAt: nowIso
+        }, { merge: true });
+        await setDoc(doc(db, 'settings', 'update'), {
+          previousBaselineVersion: targetVer,
+          latestVersion: targetVer,
+          forceUpdate: false,
+          updateActive: false,
+          redBlinkEnabled: false,
+          updatedAt: nowIso
+        }, { merge: true });
+        showToast(`⏪ Rolled back to ${targetVer} successfully!`);
+        await window.loadAppUpdatesManager();
+      } catch (e) {
+        showToast('Error rolling back: ' + e.message);
+      }
+    };
+
     window.renderUpdateHistoryTable = function() {
       const tbody = document.getElementById('au-history-table-body');
       if (!tbody) return;
@@ -12712,6 +12994,9 @@
                 <button type="button" class="btn-secondary" style="height:30px; padding:0 10px; font-size:11px; font-weight:700;" onclick="reActivateHistoryUpdate(${idx})" title="Load & Re-Push this Update">
                   <i class="fa-solid fa-rotate-left" style="color:#22D3EE;"></i> Load
                 </button>
+                <button type="button" class="btn-secondary" style="height:30px; padding:0 10px; font-size:11px; font-weight:700;" onclick="rollbackToHistoryVersion(${idx})" title="Rollback & Revert Apps to ${escapeHtml(item.previousVersion || 'v2.5.0')}">
+                  <i class="fa-solid fa-backward-step" style="color:#FBBF24;"></i> Rollback
+                </button>
                 <button type="button" class="btn-secondary" style="height:30px; padding:0 10px; font-size:11px; font-weight:700;" onclick="promoteHistoryToBaseline(${idx})" title="Set this version as Running Baseline (Check Update)">
                   <i class="fa-solid fa-check" style="color:#34D399;"></i> Set Baseline
                 </button>
@@ -12759,13 +13044,20 @@
     window.deleteHistoryUpdate = async function(idx) {
       const item = (window.appUpdateHistoryList || [])[idx];
       if (!item) return;
+      const isCurrentActive = idx === 0 && item.status === 'ACTIVE';
       const confirmed = await window.showCustomConfirm(
-        'Delete Release Record',
-        `Delete update log for ${item.pushedVersion}?`,
+        isCurrentActive ? 'Delete Active Update & Record' : 'Delete Release Record',
+        isCurrentActive
+          ? `Delete ${item.pushedVersion} and stop its active update trigger on user apps?`
+          : `Delete update history log for ${item.pushedVersion}?`,
         { okText: 'Delete', cancelText: 'Cancel' }
       );
       if (!confirmed) return;
       try {
+        if (isCurrentActive) {
+          await window.deleteCurrentActiveAppUpdate();
+          return;
+        }
         window.appUpdateHistoryList.splice(idx, 1);
         await setDoc(doc(db, 'settings', 'update_history'), {
           list: window.appUpdateHistoryList,
@@ -13961,14 +14253,16 @@ docs.forEach(docItem => {
           window.activeHotScreen = window.hotScreensTabs[0] || 'Trending';
         }
 
-        // Apply defaults for any missing tabs
+        // Apply defaults for any missing tabs, and ensure existing saved tabs also have Continue Watching & Top 10 rows seeded once
+        let needsSeedSave = false;
+        const alreadySeededV2 = Boolean(window.hotScreensData.__cwTop10SeededV2);
         window.hotScreensTabs.forEach(tab => {
           if(!window.hotScreensData[tab] || window.hotScreensData[tab].length === 0) {
             let defaults = [];
             if (tab === 'Anime') {
               defaults = [
-                { id: 'anime-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
-                { id: 'anime-top10', title: 'Top 10 in Anime', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', customIconUrl: '', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
+                { id: 'anime-top10', title: 'Top 10 in Anime', order: 2, style: 'top_10', icon: 'Trophy', customIconUrl: '', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
                 { id: 'anime-seasonal', title: 'Seasonal Anime', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
                 { id: 'anime-classic', title: 'Classic Anime Series', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
                 { id: 'anime-otherworld', title: 'Welcome to Otherworld', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'Anime', contentIds: [] },
@@ -13976,8 +14270,8 @@ docs.forEach(docItem => {
               ];
             } else if (tab === 'TV') {
               defaults = [
-                { id: 'tv-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'TV', contentIds: [] },
-                { id: 'tv-top10', title: 'Top 10 in TV', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', customIconUrl: '', mode: 'tag', tagFilter: 'TV', contentIds: [] },
+                { id: 'tv-top10', title: 'Top 10 in TV', order: 2, style: 'top_10', icon: 'Trophy', customIconUrl: '', mode: 'tag', tagFilter: 'TV', contentIds: [] },
                 { id: 'tv-seasonal', title: 'Seasonal Series', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'TV', contentIds: [] },
                 { id: 'tv-classic', title: 'Classic Series', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'TV', contentIds: [] },
                 { id: 'tv-world', title: 'Welcome to TV Worlds', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'TV', contentIds: [] },
@@ -13985,8 +14279,8 @@ docs.forEach(docItem => {
               ];
             } else if (tab === 'Short TV') {
               defaults = [
-                { id: 'shorttv-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
-                { id: 'shorttv-top10', title: 'Top 10 in Short TV', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', customIconUrl: '', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
+                { id: 'shorttv-top10', title: 'Top 10 in Short TV', order: 2, style: 'top_10', icon: 'Trophy', customIconUrl: '', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
                 { id: 'shorttv-seasonal', title: 'Seasonal Short Drama', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
                 { id: 'shorttv-classic', title: 'Classic Mini Series', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
                 { id: 'shorttv-quick', title: 'Quick Stories', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'Short TV', contentIds: [] },
@@ -13994,8 +14288,8 @@ docs.forEach(docItem => {
               ];
             } else if (tab === 'Movies') {
               defaults = [
-                { id: 'movies-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
-                { id: 'movies-top10', title: 'Top 10 in Movies', order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', customIconUrl: '', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
+                { id: 'movies-top10', title: 'Top 10 in Movies', order: 2, style: 'top_10', icon: 'Trophy', customIconUrl: '', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
                 { id: 'movies-premieres', title: 'Blockbuster Premieres', order: 3, style: 'seasonal_card', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
                 { id: 'movies-classic', title: 'Classic Movie Favorites', order: 4, style: 'classic_anime', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
                 { id: 'movies-cinema', title: 'Cinema Showcase', order: 5, style: 'landscape_text', mode: 'tag', tagFilter: 'Movie', contentIds: [] },
@@ -14009,8 +14303,8 @@ docs.forEach(docItem => {
               ];
             } else {
               defaults = [
-                { id: 'trending-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
-                { id: 'trending-top10', title: 'Top 10 in ' + tab, order: 2, style: 'top_10', icon: 'Trophy', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-continue-watching', title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', customIconUrl: '', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
+                { id: 'trending-top10', title: 'Top 10 in ' + tab, order: 2, style: 'top_10', icon: 'Trophy', customIconUrl: '', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
                 { id: 'trending-now', title: 'Trending Now', order: 3, style: 'default', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
                 { id: 'trending-networks', title: 'Networks & Studios', order: 4, style: 'network_grid', icon: 'Tv', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
                 { id: 'trending-featured', title: 'Featured Highlights', order: 5, style: 'seasonal_card', mode: 'tag', tagFilter: tab === 'Trending' ? '' : tab, contentIds: [] },
@@ -14019,10 +14313,34 @@ docs.forEach(docItem => {
               ];
             }
             window.hotScreensData[tab] = defaults;
+            needsSeedSave = true;
+          } else if (!alreadySeededV2 && tab !== 'LIVE' && Array.isArray(window.hotScreensData[tab])) {
+            const existingRows = window.hotScreensData[tab];
+            const hasCW = existingRows.some(r => r && (r.style === 'continue_watching' || String(r.title || '').toLowerCase().includes('continue watching') || String(r.id || '').toLowerCase().includes('continue')));
+            const hasTop10 = existingRows.some(r => r && (r.style === 'top_10' || r.style === 'top10' || String(r.title || '').toLowerCase().includes('top 10') || String(r.id || '').toLowerCase().includes('top10')));
+            const slug = tab.toLowerCase().replace(/\s+/g, '-');
+            const defaultTag = tab === 'Trending' ? '' : (tab === 'Movies' ? 'Movie' : tab);
+            const toPrepend = [];
+            if (!hasCW) {
+              toPrepend.push({ id: `${slug}-continue-watching`, title: 'Continue Watching', order: 1, style: 'continue_watching', icon: 'PlayCircle', customIconUrl: '', mode: 'tag', tagFilter: defaultTag, contentIds: [] });
+            }
+            if (!hasTop10) {
+              toPrepend.push({ id: `${slug}-top10`, title: `Top 10 in ${tab}`, order: 2, style: 'top_10', icon: 'Trophy', customIconUrl: '', mode: 'tag', tagFilter: defaultTag, contentIds: [] });
+            }
+            if (toPrepend.length > 0) {
+              window.hotScreensData[tab] = [...toPrepend, ...existingRows].map((r, i) => ({ ...r, order: i + 1 }));
+              needsSeedSave = true;
+            }
           }
         });
 
+        window.hotScreensData.__cwTop10SeededV2 = true;
         window.hotScreensData.__tabsList = [...window.hotScreensTabs];
+        if (needsSeedSave) {
+          try {
+            await setDoc(doc(db, 'settings', 'screens_rows'), JSON.parse(JSON.stringify(window.hotScreensData)));
+          } catch (_) {}
+        }
 
         // Load Categories
         const snapCats = await getDoc(doc(db, 'settings', 'screens_categories'));
@@ -14405,6 +14723,7 @@ docs.forEach(docItem => {
       
       const iconList = [
         { id: '', name: 'Auto (Dynamic)', icon: 'wand-2' },
+        { id: 'none', name: 'No Icon', icon: 'eye-off' },
         { id: 'Sparkles', name: 'Sparkles', icon: 'sparkles' },
         { id: 'Flame', name: 'Flame (Hot)', icon: 'flame' },
         { id: 'Zap', name: 'Zap (New)', icon: 'zap' },
@@ -14429,6 +14748,8 @@ docs.forEach(docItem => {
 
       rows.forEach((row, idx) => {
         const isCustomPick = row.mode === 'custom_pick';
+        const isRowHidden = row.hidden === true || row.enabled === false;
+        const rowCustomLogo = (row.customIconUrl || row.logoUrl || '').trim();
         
         // Style name helper
         const styleNames = {
@@ -14453,7 +14774,7 @@ docs.forEach(docItem => {
         };
 
         h += `
-          <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:16px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.25); transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(139,92,246,0.4)'" onmouseout="this.style.borderColor='var(--border-color)'">
+          <div style="background:var(--bg-secondary); border:1px solid ${isRowHidden ? 'rgba(239,68,68,0.35)' : 'var(--border-color)'}; opacity:${isRowHidden ? '0.68' : '1'}; border-radius:16px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.25); transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(139,92,246,0.4)'" onmouseout="this.style.borderColor='${isRowHidden ? 'rgba(239,68,68,0.35)' : 'var(--border-color)'}'">
             
             <!-- ROW TOP BAR -->
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
@@ -14461,8 +14782,11 @@ docs.forEach(docItem => {
                 <span style="background:linear-gradient(135deg, #8B5CF6, #06B6D4); color:#FFF; font-weight:900; font-size:12px; padding:4px 10px; border-radius:8px; box-shadow:0 2px 8px rgba(139,92,246,0.3);">
                   #${idx + 1}
                 </span>
+                ${rowCustomLogo ? `<img src="${rowCustomLogo}" style="width:24px; height:24px; object-fit:contain; border-radius:4px; background:rgba(255,255,255,0.06); padding:2px;" onerror="this.style.display='none'">` : ''}
                 <span style="font-weight:800; font-size:15px; color:#FFF;">${row.title || 'Untitled Row'}</span>
                 ${styleBadges[row.style] || styleBadges['default']}
+                ${rowCustomLogo ? `<span style="background:rgba(16,185,129,0.18); color:#34D399; border:1px solid rgba(16,185,129,0.4); font-size:10px; font-weight:800; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-image"></i> Custom Logo Active</span>` : ''}
+                ${isRowHidden ? `<span style="background:rgba(239,68,68,0.2); color:#FCA5A5; border:1px solid rgba(239,68,68,0.4); font-size:10px; font-weight:800; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-eye-slash"></i> Hidden on App</span>` : ''}
                 ${row.style === 'continue_watching'
                   ? `<span style="background:rgba(59,130,246,0.15); color:#93C5FD; border:1px solid rgba(59,130,246,0.35); font-size:10px; font-weight:700; padding:3px 8px; border-radius:6px;"><i class="fa-solid fa-clock-rotate-left"></i> Auto User History (Max 10)</span>`
                   : isCustomPick 
@@ -14472,7 +14796,10 @@ docs.forEach(docItem => {
               </div>
 
               <!-- ACTION BUTTONS -->
-              <div style="display:flex; align-items:center; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <button type="button" onclick="event.stopPropagation(); window.updateHotRow('${row.id}', 'hidden', ${!isRowHidden})" class="btn-secondary" style="height:32px; padding:0 10px; display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; border-radius:8px; cursor:pointer; color:${isRowHidden ? '#FCA5A5' : '#34D399'}; border-color:${isRowHidden ? 'rgba(239,68,68,0.35)' : 'rgba(16,185,129,0.35)'};" title="Show or Hide this row on Home Screen">
+                  <i class="fa-solid ${isRowHidden ? 'fa-eye-slash' : 'fa-eye'}"></i> ${isRowHidden ? 'Hidden' : 'Visible'}
+                </button>
                 <button type="button" onclick="event.stopPropagation(); window.saveSingleHotRow('${row.id}')" class="btn-primary" style="height:32px; padding:0 12px; display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; border-radius:8px; background:linear-gradient(135deg, #10B981, #059669); border:none; box-shadow:0 2px 8px rgba(16,185,129,0.3); cursor:pointer; color:#FFF;" title="Save this specific row to Firestore">
                   <i class="fa-solid fa-floppy-disk"></i> Save Row
                 </button>
@@ -14489,13 +14816,21 @@ docs.forEach(docItem => {
             </div>
             
             <!-- ROW CONFIG FORM GRID -->
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:16px;">
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:16px;">
               <div>
-                <label style="display:block; font-size:10px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Row Title</label>
+                <label style="display:block; font-size:10px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Row Title (Shown on Home Screen)</label>
                 <input type="text" class="input-control" value="${row.title || ''}" onchange="updateHotRow('${row.id}', 'title', this.value)" placeholder="Row Title...">
               </div>
+              <div>
+                <label style="display:block; font-size:10px; font-weight:800; color:#22D3EE; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Custom Row Logo / Icon URL (Optional)</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  ${rowCustomLogo ? `<img src="${rowCustomLogo}" style="width:36px; height:36px; border-radius:8px; object-fit:contain; background:rgba(255,255,255,0.06); border:1px solid rgba(6,182,212,0.4); padding:3px; flex-shrink:0;" onerror="this.style.display='none'">` : ''}
+                  <input type="text" class="input-control" value="${rowCustomLogo}" onchange="updateHotRow('${row.id}', 'customIconUrl', this.value.trim())" placeholder="https://.../custom-logo.png (Replaces icon)">
+                  ${rowCustomLogo ? `<button type="button" class="btn-secondary" style="height:36px; padding:0 10px; font-size:11px; color:#F87171;" onclick="updateHotRow('${row.id}', 'customIconUrl', '')" title="Clear Custom Logo"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                </div>
+              </div>
               <div style="grid-column: 1 / -1;">
-                <label style="display:block; font-size:10px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Row Icon</label>
+                <label style="display:block; font-size:10px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Row Preset Icon (Used if Custom Logo URL is empty)</label>
                 <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; scrollbar-width:thin; scrollbar-color:var(--border-color) transparent;">
                   ${iconList.map(ic => {
                     const isSelected = (row.icon || '') === ic.id;

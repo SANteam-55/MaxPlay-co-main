@@ -38,6 +38,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
   const { logout } = useAuth();
   const {
     hasApkUpdate,
+    isRedBlinkActive,
     forceUpdate,
     formattedCurrentVersion,
     formattedLatestVersion,
@@ -82,6 +83,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
   const [showLangModal, setShowLangModal] = useState(false);
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [settingsUpdateNoteLang, setSettingsUpdateNoteLang] = useState<'en' | 'hi'>('hi');
   const [isCheckingUpdateNow, setIsCheckingUpdateNow] = useState(false);
   const [updateCheckStatusText, setUpdateCheckStatusText] = useState<string | null>(null);
   const [settingsApkProgress, setSettingsApkProgress] = useState<{
@@ -395,9 +397,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
             <div className="flex items-center gap-3 text-white">
               <div className="relative flex items-center justify-center">
                 <RefreshCw
-                  className={`h-5 w-5 ${hasApkUpdate ? 'text-red-500 animate-spin' : 'text-[#10B981]'}`}
+                  className={`h-5 w-5 ${isRedBlinkActive ? 'text-red-500 animate-spin' : 'text-[#10B981]'}`}
                 />
-                {hasApkUpdate && (
+                {isRedBlinkActive && (
                   <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 animate-ping" />
                 )}
               </div>
@@ -415,7 +417,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
                 {formattedCurrentVersion || appVersion}
               </span>
               {hasApkUpdate && (
-                <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-[10px] font-black text-white shadow-md shadow-red-600/50 animate-pulse">
+                <span className={`rounded-full bg-red-600 px-2.5 py-0.5 text-[10px] font-black text-white shadow-md shadow-red-600/50 ${isRedBlinkActive ? 'animate-pulse' : ''}`}>
                   UPDATE {formattedLatestVersion}
                 </span>
               )}
@@ -740,8 +742,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
               </p>
             )}
 
+            {/* Bilingual (English / Hindi) Safe Permission Reassurance Box */}
+            <div className="mt-3.5 rounded-2xl bg-emerald-500/[0.08] border border-emerald-500/30 p-3">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="text-[11px] font-extrabold text-emerald-300">
+                    {settingsUpdateNoteLang === 'hi'
+                      ? 'सुरक्षित अपडेट सूचना (100% Safe)'
+                      : 'Safe Update Permission Note'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettingsUpdateNoteLang((prev) => (prev === 'en' ? 'hi' : 'en'))}
+                  className="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 px-2.5 py-0.5 text-[10px] font-black text-white transition cursor-pointer shrink-0"
+                >
+                  <span>{settingsUpdateNoteLang === 'en' ? 'हिंदी में पढ़ें' : 'Read in English'}</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-zinc-200 leading-relaxed">
+                {settingsUpdateNoteLang === 'hi'
+                  ? 'अपडेट करते समय यदि आपका फोन "Install Unknown Apps" की परमिशन मांगे, तो बिना किसी चिंता के उसे Allow कर दें। यह परमिशन सिर्फ इसलिए मांगी जाती है ताकि MaxPlay ऐप के अंदर से ही नया ऑफिशियल अपडेट सुरक्षित रूप से इंस्टॉल हो सके।'
+                  : 'If your phone asks for "Install Unknown Apps" permission during update, please allow it without worry. This permission is only required so MaxPlay can safely install the official update directly inside the app.'}
+              </p>
+            </div>
+
             {/* Action Buttons */}
-            <div className="mt-5 flex flex-col gap-2.5">
+            <div className="mt-4 flex flex-col gap-2.5">
               {settingsApkProgress && (
                 <div className="rounded-xl bg-black/60 border border-red-500/30 p-3 space-y-1.5">
                   <div className="flex items-center justify-between text-[11px] font-bold">

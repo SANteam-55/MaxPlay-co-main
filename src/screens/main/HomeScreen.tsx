@@ -114,6 +114,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const { user } = useAuth();
   const {
     hasApkUpdate,
+    isRedBlinkActive,
     currentApkVersion,
     formattedCurrentVersion,
     latestApkVersion,
@@ -127,6 +128,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     triggerManualUpdateCheck,
   } = useGeneralSettings();
   const [showApkUpdateModal, setShowApkUpdateModal] = useState(false);
+  const [updateNoteLang, setUpdateNoteLang] = useState<'en' | 'hi'>('hi');
   const [isCheckingUpdateManual, setIsCheckingUpdateManual] = useState(false);
   const [apkUpdateProgress, setApkUpdateProgress] = useState<{
     status: string;
@@ -267,9 +269,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   }, [hotTabs, activeTab]);
 
-  // Automatically show APK Update popup when a newer version is available in Admin messages/settings, plus periodic reminders until updated
+  // Automatically show APK Update popup when a newer version is available and Red Blinking is enabled by Admin
   useEffect(() => {
-    if (!hasApkUpdate) {
+    if (!hasApkUpdate || (!isRedBlinkActive && !forceUpdate)) {
       return;
     }
     const timer = setTimeout(() => {
@@ -284,7 +286,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       clearTimeout(timer);
       clearInterval(interval);
     };
-  }, [hasApkUpdate, latestApkVersion]);
+  }, [hasApkUpdate, isRedBlinkActive, forceUpdate, latestApkVersion]);
   
   const handleContentClick = useCallback((item: ContentItem) => {
     onSelectContent?.(item);
@@ -515,17 +517,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 setShowApkUpdateModal(true);
               }}
               title={
-                hasApkUpdate
+                isRedBlinkActive
                   ? `New APK Update Available (${formattedLatestVersion}) - Tap to Update`
                   : `Check App Update (${formattedCurrentVersion})`
               }
               className={`relative flex shrink-0 items-center justify-center h-9 w-9 rounded-full transition cursor-pointer ${
-                hasApkUpdate
+                isRedBlinkActive
                   ? 'bg-red-600 text-white border-2 border-red-200 shadow-[0_0_22px_rgba(239,68,68,1)] animate-pulse hover:bg-red-500'
                   : 'bg-white/15 backdrop-blur-md text-white hover:bg-white/25 border border-white/10'
               }`}
             >
-              {hasApkUpdate && (
+              {isRedBlinkActive && (
                 <>
                   <span className="absolute -inset-1.5 rounded-full bg-red-500/60 animate-ping pointer-events-none" />
                   <span className="absolute -top-1 -right-1 z-20 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white text-[8px] font-black text-red-600 shadow">
@@ -545,7 +547,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <button
                   key={tab}
                   onClick={() => {
-                    adManager.handleHomeCategoryClick(tab, !!user?.isPremium);
                     setActiveTab(tab);
                   }}
                   className={`relative flex items-center gap-1 pb-1 text-[16px] whitespace-nowrap transition cursor-pointer ${
@@ -660,77 +661,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       })()}
 
       
-      {/* Top 10 Content Row Fallback (Only rendered here if the active screen does NOT already have a Top 10 row in its Manage Hot Screens row list) */}
-      {(() => {
-        if (loading) return null;
-        const userConfigured = homeRowsByScreen?.[activeTab];
-        const currentScreenRows = (userConfigured && userConfigured.length > 0)
-          ? userConfigured
-          : getDefaultRowsForScreen(activeTab);
-        const hasConfiguredTop10Row = currentScreenRows.some((r: any) => {
-          const st = (r?.style || '').toLowerCase();
-          const tl = (r?.title || '').toLowerCase();
-          const il = (r?.id || '').toLowerCase();
-          return st === 'top_10' || st === 'top10' || tl.includes('top 10') || il.includes('top_10') || il.includes('top10');
-        });
-        if (hasConfiguredTop10Row) return null;
-
-        const top10 = filteredContentList
-          .filter((item: any) => item.isTop10)
-          .sort((a: any, b: any) => (a.top10Rank || 99) - (b.top10Rank || 99))
-          .slice(0, 10);
-
-        if (top10.length === 0) return null;
-
-        return (
-          <div className="mt-5 px-4">
-            <SectionHeader
-              title={`Top 10 in ${activeTab}`}
-              icon={<Trophy className="h-5 w-5 text-amber-400" />}
-            />
-            <div
-              className="flex items-center gap-3.5 overflow-x-auto overflow-y-hidden pb-3 pt-1 scrollbar-none"
-              style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
-            >
-              {top10.map((item: any, index: number) => {
-                const displayPoster = item.customImage || item.posterUrl || item.backdropUrl;
-                const displayTitle = item.customTitle || item.title;
-                return (
-                  <div
-                    key={`${item.id}-${index}`}
-                    onClick={() => handleContentClick(item)}
-                    className="group relative shrink-0 flex items-end pl-5 py-1 cursor-pointer select-none active:scale-95 transition-transform"
-                  >
-                    <div className="relative w-[124px] sm:w-[136px] aspect-[2/3] rounded-[12px] overflow-hidden bg-[#14161D] border border-white/10 shadow-[0_8px_20px_rgba(0,0,0,0.65)] z-10">
-                      <img
-                        src={displayPoster}
-                        alt={displayTitle}
-                        loading="lazy"
-                        decoding="async"
-                        draggable={false}
-                        className="w-full h-full object-cover pointer-events-none transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/65 via-black/15 to-transparent pointer-events-none" />
-                    </div>
-                    <span
-                      className="
-                        absolute left-0 bottom-0.5 z-20
-                        font-black text-[72px] sm:text-[80px] leading-[0.84] tracking-tighter
-                        text-[#0A0A0D] select-none pointer-events-none
-                        drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)]
-                      "
-                      style={{ WebkitTextStroke: '4.5px #FFFFFF', paintOrder: 'stroke fill' }}
-                    >
-                      {index + 1}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Upcoming Releases Row (Filtered by Active Tab) */}
       {(() => {
         if (loading) return null;
@@ -777,11 +707,53 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </>
       ) : (() => {
         const userConfigured = homeRowsByScreen?.[activeTab];
-        const currentScreenRows = (userConfigured && userConfigured.length > 0)
-          ? userConfigured
+        const wasSeededV2 = Boolean((homeRowsByScreen as any)?.__cwTop10SeededV2);
+        let currentScreenRows = (userConfigured && userConfigured.length > 0)
+          ? [...userConfigured]
           : getDefaultRowsForScreen(activeTab);
 
+        // If Firestore rows were saved before Continue Watching & Top 10 rows were added, seamlessly include them
+        if (userConfigured && userConfigured.length > 0 && !wasSeededV2 && activeTab !== 'LIVE') {
+          const hasCW = currentScreenRows.some((r: any) => {
+            const st = String(r?.style || '').toLowerCase();
+            const tl = String(r?.title || '').toLowerCase();
+            const il = String(r?.id || '').toLowerCase();
+            return st === 'continue_watching' || tl.includes('continue watching') || il.includes('continue_watching') || il.includes('continue-watching');
+          });
+          const hasTop10 = currentScreenRows.some((r: any) => {
+            const st = String(r?.style || '').toLowerCase();
+            const tl = String(r?.title || '').toLowerCase();
+            const il = String(r?.id || '').toLowerCase();
+            return st === 'top_10' || st === 'top10' || tl.includes('top 10') || il.includes('top_10') || il.includes('top10');
+          });
+          const prepended: any[] = [];
+          if (!hasCW) {
+            prepended.push({
+              id: `${activeTab.toLowerCase().replace(/\s+/g, '-')}-continue-watching`,
+              title: 'Continue Watching',
+              order: 1,
+              style: 'continue_watching',
+              icon: 'PlayCircle',
+              tagFilter: activeTab === 'Trending' ? '' : activeTab,
+            });
+          }
+          if (!hasTop10) {
+            prepended.push({
+              id: `${activeTab.toLowerCase().replace(/\s+/g, '-')}-top10`,
+              title: `Top 10 in ${activeTab}`,
+              order: 2,
+              style: 'top_10',
+              icon: 'Trophy',
+              tagFilter: activeTab === 'Trending' ? '' : activeTab,
+            });
+          }
+          if (prepended.length > 0) {
+            currentScreenRows = [...prepended, ...currentScreenRows];
+          }
+        }
+
         return currentScreenRows.map((row: any) => {
+          if (row.hidden === true || row.enabled === false) return null;
           let rowContent = [];
           
           if (row.mode === 'custom_pick') {
@@ -915,9 +887,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           }
           if (rowContent.length === 0 && !isContinueWatchingRow && row.style !== 'network_grid' && row.style !== 'networks') return null;
 
-          let icon = <Sparkles className="h-5 w-5 text-[#8B5CF6]" />;
+          let icon: React.ReactNode = <Sparkles className="h-5 w-5 text-[#8B5CF6]" />;
+          const customLogoUrl = String(row.customIconUrl || row.logoUrl || '').trim();
           
-          if (row.icon) {
+          if (customLogoUrl) {
+            icon = (
+              <img
+                src={customLogoUrl}
+                alt=""
+                className="h-5 w-5 object-contain rounded-sm shrink-0"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
+            );
+          } else if (row.icon === 'none') {
+            icon = undefined;
+          } else if (row.icon) {
             switch(row.icon) {
               case 'Sparkles': icon = <Sparkles className="h-5 w-5 text-[#8B5CF6]" />; break;
               case 'Flame': icon = <Flame className="h-5 w-5 text-amber-500 fill-amber-500" />; break;
@@ -1394,8 +1380,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     )}
                   </div>
 
+                  {/* Bilingual (English / Hindi) Safe Permission Reassurance Box */}
+                  <div className="mt-3 rounded-2xl bg-emerald-500/[0.08] border border-emerald-500/30 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span className="text-[11px] font-extrabold text-emerald-300">
+                          {updateNoteLang === 'hi'
+                            ? 'सुरक्षित अपडेट सूचना (100% Safe)'
+                            : 'Safe Update Permission Note'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUpdateNoteLang((prev) => (prev === 'en' ? 'hi' : 'en'))}
+                        className="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 px-2.5 py-0.5 text-[10px] font-black text-white transition cursor-pointer shrink-0"
+                      >
+                        <span>{updateNoteLang === 'en' ? 'हिंदी में पढ़ें' : 'Read in English'}</span>
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-200 leading-relaxed">
+                      {updateNoteLang === 'hi'
+                        ? 'अपडेट करते समय यदि आपका फोन "Install Unknown Apps" की परमिशन मांगे, तो बिना किसी चिंता के उसे Allow कर दें। यह परमिशन सिर्फ इसलिए मांगी जाती है ताकि MaxPlay ऐप के अंदर से ही नया ऑफिशियल अपडेट सुरक्षित रूप से इंस्टॉल हो सके।'
+                        : 'If your phone asks for "Install Unknown Apps" permission during update, please allow it without worry. This permission is only required so MaxPlay can safely install the official update directly inside the app.'}
+                    </p>
+                  </div>
+
                   {/* Primary Action CTA: Hidden APK Link + Native Android Self-Updater */}
-                  <div className="mt-4 flex flex-col gap-2.5">
+                  <div className="mt-3.5 flex flex-col gap-2.5">
                     {apkUpdateProgress && (
                       <div className="rounded-xl bg-black/60 border border-red-500/30 p-3 space-y-1.5">
                         <div className="flex items-center justify-between text-[11px] font-bold">

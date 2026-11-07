@@ -305,8 +305,10 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                       className={`group rounded-xl p-3.5 cursor-pointer transition-all duration-150 border flex items-center justify-between ${
                         isSelected
                           ? 'bg-gradient-to-r from-[#8B5CF6]/20 via-[#6366F1]/15 to-transparent border-[#8B5CF6] shadow-[0_0_15px_rgba(139,92,246,0.2)]'
-                          : meta.serverTag
-                          ? 'bg-[#1a1625] hover:bg-[#221c30] border-amber-500/30'
+                          : meta.serverTag === 'S1'
+                          ? 'bg-gradient-to-r from-[#8B5CF6]/15 to-[#181920] hover:from-[#8B5CF6]/25 border-purple-500/40'
+                          : meta.serverTag === 'S2'
+                          ? 'bg-gradient-to-r from-[#F59E0B]/15 to-[#181920] hover:from-[#F59E0B]/25 border-amber-500/40'
                           : 'bg-[#181920] hover:bg-[#1e2029] border-white/10'
                       }`}
                     >
@@ -315,8 +317,10 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                           className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
                             isSelected
                               ? 'bg-gradient-to-br from-[#A855F7] to-[#6366F1] text-white shadow'
-                              : meta.serverTag
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                              : meta.serverTag === 'S1'
+                              ? 'bg-gradient-to-br from-[#8B5CF6] to-[#6D28D9] text-white border border-purple-300/50'
+                              : meta.serverTag === 'S2'
+                              ? 'bg-gradient-to-br from-[#F59E0B] to-[#D97706] text-black border border-amber-300/60'
                               : 'bg-white/5 text-zinc-400 border border-white/10'
                           }`}
                         >
@@ -338,7 +342,13 @@ export const SoloLevelingSelectorModal: React.FC<SoloLevelingSelectorModalProps>
                               {meta.badge}
                             </span>
                             {meta.serverLabel && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                              <span
+                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                                  meta.serverTag === 'S1'
+                                    ? 'bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] text-white border-purple-300/50'
+                                    : 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-black border-amber-300/60'
+                                }`}
+                              >
                                 {meta.serverLabel}
                               </span>
                             )}

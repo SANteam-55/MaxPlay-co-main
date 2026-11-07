@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, AlertCircle, Trash2, Film } from 'lucide-react';
-import { DownloadedFile, downloadManager } from '../../services/DownloadManager';
+import { DownloadedFile } from '../../services/DownloadManager';
 
 interface DownloadedItemProps {
   item: DownloadedFile;
@@ -25,28 +25,11 @@ export const DownloadedItem: React.FC<DownloadedItemProps> = ({
 
   const [imgFailed, setImgFailed] = useState(false);
   const [isVerticalVideo, setIsVerticalVideo] = useState<boolean>(Boolean(item.isVertical));
-  const [fallbackVideoSrc, setFallbackVideoSrc] = useState<string>(item.videoUrl || '');
 
   useEffect(() => {
     setImgFailed(false);
     setIsVerticalVideo(Boolean(item.isVertical));
-    setFallbackVideoSrc(item.videoUrl || '');
-
-    if (isLocalFile && !hasGenuineThumb && !item.videoUrl) {
-      let active = true;
-      downloadManager
-        .getOfflineVideoUrl(item.id, item.episodeId, item.episodeIndex)
-        .then((url) => {
-          if (active && url) {
-            setFallbackVideoSrc(url);
-          }
-        })
-        .catch(() => {});
-      return () => {
-        active = false;
-      };
-    }
-  }, [item.id, item.posterUrl, item.videoUrl, item.isVertical, isLocalFile, hasGenuineThumb, item.episodeId, item.episodeIndex]);
+  }, [item.id, item.posterUrl, item.isVertical]);
 
   // For Local Files: Horizontal (16:9) card image by default; switches to Vertical (9:16) if video is vertical
   // For MovieBox / Received: Standard vertical poster card image
@@ -70,6 +53,8 @@ export const DownloadedItem: React.FC<DownloadedItemProps> = ({
             <img
               src={item.posterUrl}
               alt={item.title}
+              loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover"
               onLoad={(e) => {
                 const { naturalWidth, naturalHeight } = e.currentTarget;
@@ -78,24 +63,6 @@ export const DownloadedItem: React.FC<DownloadedItemProps> = ({
                 }
               }}
               onError={() => setImgFailed(true)}
-            />
-          ) : fallbackVideoSrc ? (
-            <video
-              src={fallbackVideoSrc}
-              preload="metadata"
-              muted
-              playsInline
-              className="h-full w-full object-cover pointer-events-none"
-              onLoadedMetadata={(e) => {
-                const v = e.currentTarget;
-                if (v.videoWidth > 0 && v.videoHeight > 0) {
-                  setIsVerticalVideo(v.videoHeight > v.videoWidth);
-                }
-                try {
-                  const seekTarget = v.duration && v.duration > 2 ? Math.min(1.5, v.duration * 0.1) : 0.1;
-                  v.currentTime = seekTarget;
-                } catch {}
-              }}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1E1B2E] to-[#121218]">

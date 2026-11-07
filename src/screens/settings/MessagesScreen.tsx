@@ -45,6 +45,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onBack, onPlayCo
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [readIds, setReadIds] = useState<string[]>([]);
   const [msgApkProgress, setMsgApkProgress] = useState<Record<string, { status: string; progress: number; message: string }>>({});
+  const [msgUpdateLang, setMsgUpdateLang] = useState<'en' | 'hi'>('hi');
 
   useEffect(() => {
     // Load local read/dismissed state from localStorage
@@ -108,8 +109,10 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onBack, onPlayCo
     }
   };
 
-  // Filter messages
-  const activeMessages = messages.filter(m => !dismissedIds.includes(m.id));
+  // Filter messages (hide dismissed or recalled/withdrawn update announcements)
+  const activeMessages = messages.filter(
+    (m) => !dismissedIds.includes(m.id) && !(m as any).isWithdrawn && !(m as any).recalled
+  );
 
   const filteredMessages = activeMessages.filter(m => {
     const isUnread = !readIds.includes(m.id) && m.isUnread !== false;
@@ -453,6 +456,34 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onBack, onPlayCo
                             </span>
                           </button>
                         )}
+                      </div>
+                      {/* Bilingual (English / Hindi) Safe Update Permission Reassurance */}
+                      <div className="rounded-lg bg-black/40 border border-white/10 p-2.5">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[10px] font-extrabold text-emerald-300 flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                            <span>
+                              {msgUpdateLang === 'hi'
+                                ? 'सुरक्षित अपडेट सूचना (100% Safe)'
+                                : 'Safe Update Permission Note'}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMsgUpdateLang((prev) => (prev === 'en' ? 'hi' : 'en'));
+                            }}
+                            className="rounded-md bg-white/10 hover:bg-white/20 border border-white/15 px-2 py-0.5 text-[9px] font-black text-white transition cursor-pointer shrink-0"
+                          >
+                            {msgUpdateLang === 'en' ? 'हिंदी में पढ़ें' : 'Read in English'}
+                          </button>
+                        </div>
+                        <p className="text-[10.5px] text-zinc-300 leading-relaxed">
+                          {msgUpdateLang === 'hi'
+                            ? 'अपडेट करते समय यदि फोन "Install Unknown Apps" की परमिशन मांगे, तो बिना किसी चिंता के Allow करें। यह सिर्फ ऐप के अंदर सुरक्षित रूप से नया अपडेट इंस्टॉल करने के लिए है।'
+                            : 'If your phone asks for "Install Unknown Apps" permission, please allow it without worry. It is only needed to safely install the official MaxPlay update inside the app.'}
+                        </p>
                       </div>
                       {msgApkProgress[msg.id] && (
                         <div className="space-y-1">

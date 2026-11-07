@@ -1716,7 +1716,13 @@ const DownloadSelectionModalInner: React.FC<DownloadSelectionModalProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 mt-2">
-                <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-xs font-bold text-purple-300">
+                <span
+                  className={`px-2.5 py-1 rounded-lg text-xs font-extrabold border ${
+                    modalServer === 'server2'
+                      ? 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-black border-amber-300/60'
+                      : 'bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] text-white border-purple-400/50'
+                  }`}
+                >
                   {modalServer === 'server2' ? 'Server 2' : 'Server 1'}
                 </span>
                 <span className="px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/30 text-xs font-bold text-sky-300">
@@ -1838,23 +1844,23 @@ const DownloadSelectionModalInner: React.FC<DownloadSelectionModalProps> = ({
                   </button>
                 )}
 
-                {/* 3. Server Selector Box */}
+                {/* 3. Server Selector Box (Dedicated Purple for Server 1, Gold for Server 2) */}
                 <button
                   type="button"
                   onClick={() =>
                     setOpenResourceDropdown((prev) => (prev === 'server' ? null : 'server'))
                   }
-                  className={`shrink-0 inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
-                    openResourceDropdown === 'server'
-                      ? 'bg-[#232530] border-[#8B5CF6] text-white'
-                      : 'bg-[#14151b] border-white/15 text-zinc-200 hover:border-white/30'
+                  className={`shrink-0 inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-extrabold transition cursor-pointer ${
+                    modalServer === 'server2'
+                      ? 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] border-amber-300/60 text-black shadow-sm shadow-amber-950/40'
+                      : 'bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] border-purple-400/50 text-white shadow-sm shadow-purple-950/40'
                   }`}
                 >
                   <span>{modalServer === 'server2' ? 'Server 2' : 'Server 1'}</span>
                   <ChevronDown
-                    className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${
-                      openResourceDropdown === 'server' ? 'rotate-180 text-white' : ''
-                    }`}
+                    className={`w-3.5 h-3.5 transition-transform ${
+                      modalServer === 'server2' ? 'text-black' : 'text-white'
+                    } ${openResourceDropdown === 'server' ? 'rotate-180' : ''}`}
                   />
                 </button>
               </div>
@@ -1919,11 +1925,11 @@ const DownloadSelectionModalInner: React.FC<DownloadSelectionModalProps> = ({
                       setModalServer('server1');
                       setOpenResourceDropdown(null);
                     }}
-                    className={`px-3.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold border transition cursor-pointer ${
                       modalServer === 'server1'
-                        ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white'
+                        ? 'bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] border-purple-300 text-white ring-2 ring-purple-400/50 shadow-md'
                         : hasServer1
-                        ? 'bg-[#14151b] border-white/10 text-zinc-400 hover:text-white'
+                        ? 'bg-gradient-to-r from-[#8B5CF6]/25 to-[#6D28D9]/25 border-purple-500/40 text-purple-200 hover:brightness-110'
                         : 'bg-[#14151b] border-white/5 text-zinc-600 cursor-not-allowed'
                     }`}
                   >
@@ -1936,11 +1942,11 @@ const DownloadSelectionModalInner: React.FC<DownloadSelectionModalProps> = ({
                       setModalServer('server2');
                       setOpenResourceDropdown(null);
                     }}
-                    className={`px-3.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold border transition cursor-pointer ${
                       modalServer === 'server2'
-                        ? 'bg-[#8B5CF6]/25 border-[#8B5CF6] text-white'
+                        ? 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] border-amber-300 text-black ring-2 ring-amber-400/50 shadow-md'
                         : hasServer2
-                        ? 'bg-[#14151b] border-white/10 text-zinc-400 hover:text-white'
+                        ? 'bg-gradient-to-r from-[#F59E0B]/25 to-[#D97706]/25 border-amber-500/40 text-amber-200 hover:brightness-110'
                         : 'bg-[#14151b] border-white/5 text-zinc-600 cursor-not-allowed'
                     }`}
                   >

@@ -142,10 +142,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = React.memo(({
               e.stopPropagation();
               handleUnlock();
             }}
-            className="absolute left-3 sm:left-6 md:left-8 top-1/2 -translate-y-1/2 z-50 flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-black/80 hover:bg-black/95 border border-white/50 hover:border-white/80 text-white shadow-2xl transition-all hover:scale-110 active:scale-90 cursor-pointer animate-in fade-in zoom-in-90 duration-150"
+            className="absolute left-3 sm:left-6 md:left-8 top-1/2 -translate-y-1/2 z-50 flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center bg-transparent text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] transition-all hover:scale-110 active:scale-90 cursor-pointer animate-in fade-in zoom-in-90 duration-150"
             title="Locked - Tap to Unlock"
           >
-            <Lock className="h-5 w-5 text-white animate-pulse" />
+            <Lock className="h-6 w-6 text-white animate-pulse drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]" />
           </button>
         )}
       </div>
@@ -203,32 +203,32 @@ export const PlayerControls: React.FC<PlayerControlsProps> = React.memo(({
         </div>
       </div>
 
-      {/* Lock Button (Inactive Lock state: Open Lock icon on left) */}
+      {/* Lock Button (Inactive Lock state: Open Lock icon on left — no black circle background) */}
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           handleLock();
         }}
-        className="absolute left-3 sm:left-6 md:left-8 top-1/2 -translate-y-1/2 z-30 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-black/60 hover:bg-black/85 border border-white/25 hover:border-white/50 text-white shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer pointer-events-auto"
+        className="absolute left-3 sm:left-6 md:left-8 top-1/2 -translate-y-1/2 z-30 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center bg-transparent text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] transition-all hover:scale-110 active:scale-90 cursor-pointer pointer-events-auto"
         title="Lock Controls"
       >
-        <Unlock className="h-5 w-5 text-white" />
+        <Unlock className="h-5 w-5 sm:h-6 sm:w-6 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]" />
       </button>
 
-      {/* CENTER CONTROLS TRIPLET: Rewind 10s, Play/Pause, Forward 10s (Symmetrical & Dead-Centered) */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex items-center justify-center gap-6 sm:gap-10 md:gap-14 select-none pointer-events-auto">
+      {/* CENTER CONTROLS TRIPLET: Rewind 10s, Play/Pause, Forward 10s (Clean icons without black circular backgrounds) */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex items-center justify-center gap-7 sm:gap-11 md:gap-14 select-none pointer-events-auto">
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onRewind10();
           }}
-          className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-black/60 hover:bg-black/85 border border-white/25 hover:border-white/50 text-white shadow-xl transition-all hover:scale-110 active:scale-90 cursor-pointer"
+          className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center bg-transparent text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] transition-all hover:scale-110 active:scale-90 cursor-pointer"
           title="Rewind 10s"
         >
-          <RotateCcw className="h-5 w-5 sm:h-6 sm:w-6" />
-          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold">10</span>
+          <RotateCcw className="h-6 w-6 sm:h-7 sm:w-7 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]" />
+          <span className="absolute inset-0 flex items-center justify-center text-[9.5px] font-extrabold drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">10</span>
         </button>
 
         <button
@@ -237,13 +237,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = React.memo(({
             e.stopPropagation();
             onPlayPause();
           }}
-          className="flex h-15 w-15 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-black/75 hover:bg-black/90 border border-white/25 hover:border-white/50 text-white shadow-xl transition-transform duration-150 hover:scale-110 active:scale-90 cursor-pointer"
+          className="flex h-15 w-15 sm:h-16 sm:w-16 items-center justify-center bg-transparent text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)] transition-transform duration-150 hover:scale-110 active:scale-90 cursor-pointer"
           title={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? (
-            <Pause className="h-7 w-7 sm:h-8 sm:w-8 fill-current" />
+            <Pause className="h-8 w-8 sm:h-9 sm:w-9 fill-current drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]" />
           ) : (
-            <Play className="h-7 w-7 sm:h-8 sm:w-8 fill-current ml-0.5" />
+            <Play className="h-8 w-8 sm:h-9 sm:w-9 fill-current ml-0.5 drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]" />
           )}
         </button>
 
@@ -253,11 +253,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = React.memo(({
             e.stopPropagation();
             onForward10();
           }}
-          className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-black/60 hover:bg-black/85 border border-white/25 hover:border-white/50 text-white shadow-xl transition-all hover:scale-110 active:scale-90 cursor-pointer"
+          className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center bg-transparent text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] transition-all hover:scale-110 active:scale-90 cursor-pointer"
           title="Forward 10s"
         >
-          <RotateCw className="h-5 w-5 sm:h-6 sm:w-6" />
-          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold">10</span>
+          <RotateCw className="h-6 w-6 sm:h-7 sm:w-7 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]" />
+          <span className="absolute inset-0 flex items-center justify-center text-[9.5px] font-extrabold drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">10</span>
         </button>
       </div>
 
