@@ -1366,7 +1366,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
                 try {
                   const verNum = parseInt(String(version ?? "").trim(), 10);
                   let selectedParts = kParts.slice(0, 2);
-                  if (verNum >= 1 && verNum <= 20 && kParts.length >= 31 - verNum) {
+                  if (verNum >= 1 && verNum <= 20 && verNum <= kParts.length && 31 - verNum >= 1 && 31 - verNum <= kParts.length) {
                     selectedParts = [kParts[verNum - 1], kParts[31 - verNum - 1]];
                   }
                   const key = Buffer.concat(selectedParts.map(b64UrlToBuf));

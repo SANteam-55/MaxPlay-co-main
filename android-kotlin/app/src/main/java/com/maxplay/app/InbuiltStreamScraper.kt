@@ -73,20 +73,89 @@ class InbuiltStreamScraper(
         const val DEFAULT_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
+        val backgroundExecutor = Executors.newCachedThreadPool()
+
+        // Caches verified responsive IPv4 address for SprintCDN round-robin hosts (10 min TTL)
+        private val sprintCdnWorkingIpCache = ConcurrentHashMap<String, Pair<java.net.InetAddress, Long>>()
+
+        private val smartStreamDns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> {
+                val all = okhttp3.Dns.SYSTEM.lookup(hostname)
+                if (all.size <= 1) return all
+                val lowerHost = hostname.lowercase()
+                val isSprintCdn = lowerHost.contains("sprintcdn") ||
+                    lowerHost.contains("owphbf") ||
+                    lowerHost.contains("r66nv9ed") ||
+                    lowerHost.contains("n1mwq")
+
+                // Always prefer IPv4 over IPv6 for stream CDNs to avoid mobile IPv6 blackholes
+                val ipv4List = all.filterIsInstance<java.net.Inet4Address>()
+                val ipv6List = all.filter { it !is java.net.Inet4Address }
+                val ordered = if (ipv4List.isNotEmpty()) (ipv4List + ipv6List) else all
+
+                if (!isSprintCdn || ipv4List.size <= 1) {
+                    return ordered
+                }
+
+                val now = System.currentTimeMillis()
+                val cachedGood = sprintCdnWorkingIpCache[lowerHost]
+                if (cachedGood != null && cachedGood.second > now) {
+                    val goodAddr = cachedGood.first
+                    return listOf(goodAddr) + ordered.filter { it != goodAddr }
+                }
+
+                // Fast parallel TCP connect probe across SprintCDN candidate IPv4s (max 1.8s)
+                // to skip dead round-robin edge IPs that drop SYN packets
+                val winnerRef = AtomicReference<java.net.InetAddress?>(null)
+                val probeLatch = CountDownLatch(1)
+                val finishedCount = java.util.concurrent.atomic.AtomicInteger(0)
+                val candidates = ipv4List.take(4)
+
+                for (addr in candidates) {
+                    backgroundExecutor.execute {
+                        val sock = java.net.Socket()
+                        try {
+                            sock.connect(java.net.InetSocketAddress(addr, 443), 1800)
+                            if (winnerRef.compareAndSet(null, addr)) {
+                                probeLatch.countDown()
+                            }
+                        } catch (_: Exception) {
+                        } finally {
+                            try { sock.close() } catch (_: Exception) {}
+                            if (finishedCount.incrementAndGet() >= candidates.size) {
+                                probeLatch.countDown()
+                            }
+                        }
+                    }
+                }
+
+                try {
+                    probeLatch.await(1850, TimeUnit.MILLISECONDS)
+                } catch (_: Exception) {}
+
+                val winner = winnerRef.get()
+                if (winner != null) {
+                    sprintCdnWorkingIpCache[lowerHost] = Pair(winner, now + 10 * 60 * 1000L)
+                    return listOf(winner) + ordered.filter { it != winner }
+                }
+
+                return ordered
+            }
+        }
+
         val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .dns(smartStreamDns)
             .dispatcher(okhttp3.Dispatcher().apply {
                 maxRequests = 64
                 maxRequestsPerHost = 32
             })
             .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(16, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
-
-        val backgroundExecutor = Executors.newCachedThreadPool()
 
         // Caches Byse ECDSA attestation fingerprint JSON per embedOrigin for 9 minutes
         private val byseAttestCache = ConcurrentHashMap<String, Pair<JSONObject, Long>>()
@@ -507,24 +576,14 @@ class InbuiltStreamScraper(
                 }
             }
 
-            val candidateOrigins = listOf(mappedOrigin, "https://byseraguci.com", "https://f16px.com", origin, discoveredEmbedOrigin)
+            val baseCandidates = listOf(mappedOrigin, "https://byseraguci.com", "https://f16px.com", origin)
                 .filter { it.isNotBlank() }
                 .distinct()
 
-            var embedOrigin = mappedOrigin
-            var embedFrameUrl = "$mappedOrigin/e/$code"
-            var fingerprint: JSONObject? = null
             val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-            for (candOrigin in candidateOrigins) {
-                embedOrigin = candOrigin
-                embedFrameUrl = "$candOrigin/e/$code"
-                val cachedAttest = byseAttestCache[candOrigin]
-                if (cachedAttest != null && cachedAttest.second > now) {
-                    fingerprint = cachedAttest.first
-                    break
-                }
-                try {
+            fun performFreshAttestation(candOrigin: String, embedFrameUrl: String): JSONObject? {
+                return try {
                     val kpg = KeyPairGenerator.getInstance("EC")
                     kpg.initialize(ECGenParameterSpec("secp256r1"))
                     val kp = kpg.generateKeyPair()
@@ -547,242 +606,275 @@ class InbuiltStreamScraper(
                         .header("Referer", embedFrameUrl)
                         .build()
 
-                    val chResp = okHttpClient.newCall(chReq).execute()
-                    if (!chResp.isSuccessful) continue
-                    val chJson = JSONObject(chResp.body?.string() ?: "{}")
-                    val nonceStr = chJson.optString("nonce", "").ifEmpty { chJson.optString("challenge", "") }
-                    val challengeId = chJson.optString("challenge_id", "")
-                    if (nonceStr.isEmpty()) continue
+                    okHttpClient.newCall(chReq).execute().use { chResp ->
+                        if (!chResp.isSuccessful) return null
+                        val chJson = JSONObject(chResp.body?.string() ?: "{}")
+                        val nonceStr = chJson.optString("nonce", "").ifEmpty { chJson.optString("challenge", "") }
+                        val challengeId = chJson.optString("challenge_id", "")
+                        if (nonceStr.isEmpty()) return null
 
-                    val signer = Signature.getInstance("SHA256withECDSA")
-                    signer.initSign(kp.private)
-                    signer.update(nonceStr.toByteArray(Charsets.UTF_8))
-                    val derSig = signer.sign()
-                    val p1363Sig = derToP1363(derSig)
-                    val sigB64Url = b64UrlEncode(p1363Sig)
+                        val signer = Signature.getInstance("SHA256withECDSA")
+                        signer.initSign(kp.private)
+                        signer.update(nonceStr.toByteArray(Charsets.UTF_8))
+                        val derSig = signer.sign()
+                        val p1363Sig = derToP1363(derSig)
+                        val sigB64Url = b64UrlEncode(p1363Sig)
 
-                    val md = java.security.MessageDigest.getInstance("SHA-256")
-                    fun hashB64(input: String): String =
-                        b64UrlEncode(md.digest(input.toByteArray(Charsets.UTF_8)))
+                        val md = java.security.MessageDigest.getInstance("SHA-256")
+                        fun hashB64(input: String): String =
+                            b64UrlEncode(md.digest(input.toByteArray(Charsets.UTF_8)))
 
-                    val brandVersions = org.json.JSONArray()
-                        .put(JSONObject().put("brand", "Chromium").put("version", "124.0.6367.118"))
-                        .put(JSONObject().put("brand", "Google Chrome").put("version", "124.0.6367.118"))
-                        .put(JSONObject().put("brand", "Not-A.Brand").put("version", "99.0.0.0"))
+                        val brandVersions = org.json.JSONArray()
+                            .put(JSONObject().put("brand", "Chromium").put("version", "124.0.6367.118"))
+                            .put(JSONObject().put("brand", "Google Chrome").put("version", "124.0.6367.118"))
+                            .put(JSONObject().put("brand", "Not-A.Brand").put("version", "99.0.0.0"))
 
-                    val clientObj = JSONObject().apply {
-                        put("user_agent", DEFAULT_USER_AGENT)
-                        put("architecture", "x86")
-                        put("bitness", "64")
-                        put("platform", "Windows")
-                        put("platform_version", "15.0.0")
-                        put("model", "")
-                        put("ua_full_version", "124.0.6367.118")
-                        put("brand_full_versions", brandVersions)
-                        put("pixel_ratio", 1)
-                        put("screen_width", 1920)
-                        put("screen_height", 1080)
-                        put("color_depth", 24)
-                        put("languages", org.json.JSONArray().put("en-US").put("en"))
-                        put("timezone", "Asia/Kolkata")
-                        put("hardware_concurrency", 8)
-                        put("device_memory", 8)
-                        put("touch_points", 0)
-                        put("webgl_vendor", "Google Inc. (NVIDIA)")
-                        put("webgl_renderer", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)")
-                        put("canvas_hash", hashB64("canvas-byse-access"))
-                        put("audio_hash", hashB64("audio-byse-access"))
-                        put("webgl_params_hash", hashB64("webgl-params"))
-                        put("fonts_hash", hashB64("Arial,Calibri,Consolas,Segoe UI,Tahoma,Times New Roman,Verdana"))
-                        put("codecs_hash", hashB64("codecs-v1"))
-                        put("media_devices", "ai1ao2vi1")
-                        put("pointer_type", "fine,hover")
-                        put("extra", JSONObject().put("vendor", "Google Inc.").put("appVersion", DEFAULT_USER_AGENT.removePrefix("Mozilla/")))
-                    }
-
-                    val attBody = JSONObject().apply {
-                        put("viewer_id", "")
-                        put("device_id", "")
-                        put("challenge_id", challengeId)
-                        put("nonce", nonceStr)
-                        put("signature", sigB64Url)
-                        put("public_key", publicJwk)
-                        put("client", clientObj)
-                        put("storage", JSONObject())
-                        put("attributes", JSONObject().put("entropy", "high"))
-                    }.toString().toRequestBody(jsonMediaType)
-
-                    val attReq = Request.Builder()
-                        .url("$candOrigin/api/videos/access/attest")
-                        .post(attBody)
-                        .header("User-Agent", DEFAULT_USER_AGENT)
-                        .header("Content-Type", "application/json")
-                        .header("Origin", candOrigin)
-                        .header("Referer", embedFrameUrl)
-                        .build()
-
-                    val attResp = okHttpClient.newCall(attReq).execute()
-                    if (attResp.isSuccessful) {
-                        val attJson = JSONObject(attResp.body?.string() ?: "{}")
-                        val fObj = JSONObject().apply {
-                            put("token", attJson.optString("token", ""))
-                            put("viewer_id", attJson.optString("viewer_id", ""))
-                            put("device_id", attJson.optString("device_id", ""))
-                            put("confidence", attJson.optDouble("confidence", 0.9))
+                        val clientObj = JSONObject().apply {
+                            put("user_agent", DEFAULT_USER_AGENT)
+                            put("architecture", "x86")
+                            put("bitness", "64")
+                            put("platform", "Windows")
+                            put("platform_version", "15.0.0")
+                            put("model", "")
+                            put("ua_full_version", "124.0.6367.118")
+                            put("brand_full_versions", brandVersions)
+                            put("pixel_ratio", 1)
+                            put("screen_width", 1920)
+                            put("screen_height", 1080)
+                            put("color_depth", 24)
+                            put("languages", org.json.JSONArray().put("en-US").put("en"))
+                            put("timezone", "Asia/Kolkata")
+                            put("hardware_concurrency", 8)
+                            put("device_memory", 8)
+                            put("touch_points", 0)
+                            put("webgl_vendor", "Google Inc. (NVIDIA)")
+                            put("webgl_renderer", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)")
+                            put("canvas_hash", hashB64("canvas-byse-access"))
+                            put("audio_hash", hashB64("audio-byse-access"))
+                            put("webgl_params_hash", hashB64("webgl-params"))
+                            put("fonts_hash", hashB64("Arial,Calibri,Consolas,Segoe UI,Tahoma,Times New Roman,Verdana"))
+                            put("codecs_hash", hashB64("codecs-v1"))
+                            put("media_devices", "ai1ao2vi1")
+                            put("pointer_type", "fine,hover")
+                            put("extra", JSONObject().put("vendor", "Google Inc.").put("appVersion", DEFAULT_USER_AGENT.removePrefix("Mozilla/")))
                         }
-                        fingerprint = fObj
-                        byseAttestCache[candOrigin] = Pair(fObj, now + 9 * 60 * 1000L)
-                        byseEmbedOriginCache[origin] = candOrigin
-                        break
+
+                        val attBody = JSONObject().apply {
+                            put("viewer_id", "")
+                            put("device_id", "")
+                            put("challenge_id", challengeId)
+                            put("nonce", nonceStr)
+                            put("signature", sigB64Url)
+                            put("public_key", publicJwk)
+                            put("client", clientObj)
+                            put("storage", JSONObject())
+                            put("attributes", JSONObject().put("entropy", "high"))
+                        }.toString().toRequestBody(jsonMediaType)
+
+                        val attReq = Request.Builder()
+                            .url("$candOrigin/api/videos/access/attest")
+                            .post(attBody)
+                            .header("User-Agent", DEFAULT_USER_AGENT)
+                            .header("Content-Type", "application/json")
+                            .header("Origin", candOrigin)
+                            .header("Referer", embedFrameUrl)
+                            .build()
+
+                        okHttpClient.newCall(attReq).execute().use { attResp ->
+                            if (!attResp.isSuccessful) return null
+                            val attJson = JSONObject(attResp.body?.string() ?: "{}")
+                            val fObj = JSONObject().apply {
+                                put("token", attJson.optString("token", ""))
+                                put("viewer_id", attJson.optString("viewer_id", ""))
+                                put("device_id", attJson.optString("device_id", ""))
+                                put("confidence", attJson.optDouble("confidence", 0.9))
+                            }
+                            byseAttestCache[candOrigin] = Pair(fObj, System.currentTimeMillis() + 9 * 60 * 1000L)
+                            byseEmbedOriginCache[origin] = candOrigin
+                            return fObj
+                        }
                     }
                 } catch (_: Exception) {
+                    null
                 }
             }
 
-            if (fingerprint == null) return null
+            for (candOrigin in baseCandidates) {
+                val embedOrigin = candOrigin
+                val embedFrameUrl = "$candOrigin/e/$code"
 
-            val pbPayloadStr = JSONObject().apply {
-                put("fingerprint", fingerprint)
-            }.toString()
-
-            fun buildEmbedReq(url: String, bodyStr: String, captchaToken: String = ""): Request {
-                val b = Request.Builder()
-                    .url(url)
-                    .post(bodyStr.toRequestBody(jsonMediaType))
-                    .header("User-Agent", DEFAULT_USER_AGENT)
-                    .header("Content-Type", "application/json")
-                    .header("Origin", embedOrigin)
-                    .header("Referer", embedFrameUrl)
-                    .header("X-Embed-Origin", host)
-                    .header("X-Embed-Referer", sourceUrl.trim())
-                    .header("X-Embed-Parent", "$origin/e/$code")
-                if (captchaToken.isNotEmpty()) {
-                    b.header("X-Captcha-Token", captchaToken)
+                fun buildEmbedReq(url: String, bodyStr: String, captchaToken: String = ""): Request {
+                    val b = Request.Builder()
+                        .url(url)
+                        .post(bodyStr.toRequestBody(jsonMediaType))
+                        .header("User-Agent", DEFAULT_USER_AGENT)
+                        .header("Content-Type", "application/json")
+                        .header("Origin", embedOrigin)
+                        .header("Referer", embedFrameUrl)
+                        .header("X-Embed-Origin", host)
+                        .header("X-Embed-Referer", sourceUrl.trim())
+                        .header("X-Embed-Parent", "$origin/e/$code")
+                    if (captchaToken.isNotEmpty()) {
+                        b.header("X-Captcha-Token", captchaToken)
+                    }
+                    return b.build()
                 }
-                return b.build()
-            }
 
-            var pbJson = JSONObject()
+                // Up to 2 attempts per origin: first using cached attestation (if available), second with fresh attestation
+                for (attempt in 0..1) {
+                    val cachedAttest = if (attempt == 0) byseAttestCache[candOrigin] else null
+                    val usedCached = cachedAttest != null && cachedAttest.second > System.currentTimeMillis()
+                    val fingerprint = if (usedCached) {
+                        cachedAttest!!.first
+                    } else {
+                        performFreshAttestation(candOrigin, embedFrameUrl)
+                    } ?: break
 
-            // Fast-path: Solve PoW Captcha directly to skip the wasted 428 round-trip
-            val capChResp = try {
-                okHttpClient.newCall(
-                    buildEmbedReq("$embedOrigin/api/videos/$code/embed/captcha", pbPayloadStr)
-                ).execute()
-            } catch (_: Exception) {
-                null
-            }
-
-            if (capChResp != null && capChResp.isSuccessful) {
-                val capChJson = JSONObject(capChResp.body?.string() ?: "{}")
-                val powNonce = capChJson.optString("pow_nonce", "").ifEmpty { capChJson.optString("nonce", "") }
-                val powDiff = capChJson.optInt("pow_difficulty", capChJson.optInt("difficulty", 16))
-                val powToken = capChJson.optString("pow_token", "").ifEmpty { capChJson.optString("challenge_id", "") }
-
-                if (powNonce.isNotEmpty() && powToken.isNotEmpty()) {
-                    val solutionStr = solveBysePow(powNonce, powDiff)
-                    val capVerBodyStr = JSONObject().apply {
-                        put("pow_token", powToken)
-                        put("solution", solutionStr)
+                    val pbPayloadStr = JSONObject().apply {
                         put("fingerprint", fingerprint)
                     }.toString()
 
-                    val capVerResp = okHttpClient.newCall(
-                        buildEmbedReq("$embedOrigin/api/videos/$code/embed/captcha/verify", capVerBodyStr)
-                    ).execute()
+                    var pbJson = JSONObject()
 
-                    if (capVerResp.isSuccessful) {
-                        val capVerJson = JSONObject(capVerResp.body?.string() ?: "{}")
-                        val captchaToken = capVerJson.optString("token", "").ifEmpty { capVerJson.optString("captcha_token", "") }
-                        val pbResp = okHttpClient.newCall(
-                            buildEmbedReq("$embedOrigin/api/videos/$code/embed/playback", pbPayloadStr, captchaToken)
+                    val capChResp = try {
+                        okHttpClient.newCall(
+                            buildEmbedReq("$embedOrigin/api/videos/$code/embed/captcha", pbPayloadStr)
                         ).execute()
-                        pbJson = JSONObject(pbResp.body?.string() ?: "{}")
+                    } catch (_: Exception) {
+                        null
                     }
-                }
-            } else {
-                val pbResp = okHttpClient.newCall(
-                    buildEmbedReq("$embedOrigin/api/videos/$code/embed/playback", pbPayloadStr)
-                ).execute()
-                pbJson = JSONObject(pbResp.body?.string() ?: "{}")
-            }
 
-            val playbackObj = pbJson.optJSONObject("playback") ?: run {
-                byseAttestCache.remove(embedOrigin)
-                return null
-            }
-            val sourcesList = mutableListOf<String>()
-            var bestHeight = 0
-            var bestBitrateKbps = 0
-            var bestLabel = ""
-            var bestSizeBytes = 0L
+                    if (capChResp != null) {
+                        val capChSuccess = capChResp.isSuccessful
+                        val capChBody = try { capChResp.body?.string() ?: "{}" } finally { capChResp.close() }
+                        if (capChSuccess) {
+                            val capChJson = JSONObject(capChBody)
+                            val powNonce = capChJson.optString("pow_nonce", "").ifEmpty { capChJson.optString("nonce", "") }
+                            val powDiff = capChJson.optInt("pow_difficulty", capChJson.optInt("difficulty", 16))
+                            val powToken = capChJson.optString("pow_token", "").ifEmpty { capChJson.optString("challenge_id", "") }
 
-            fun extractSourcesFromDecrypted(decJson: JSONObject?) {
-                val arr = decJson?.optJSONArray("sources") ?: return
-                for (i in 0 until arr.length()) {
-                    val s = arr.optJSONObject(i) ?: continue
-                    val u = s.optString("url", "")
-                    if (u.startsWith("http")) {
-                        sourcesList.add(u)
-                        val h = s.optInt("height", 0)
-                        val br = s.optInt("bitrate_kbps", 0)
-                        val lbl = s.optString("label", "")
-                        val sz = s.optLong("size_bytes", 0L)
-                        if (h > bestHeight) bestHeight = h
-                        if (br > bestBitrateKbps) bestBitrateKbps = br
-                        if (bestLabel.isEmpty() && lbl.isNotEmpty()) bestLabel = lbl
-                        if (sz > bestSizeBytes && sz != 4294967295L) bestSizeBytes = sz
+                            if (powNonce.isNotEmpty() && powToken.isNotEmpty()) {
+                                val solutionStr = solveBysePow(powNonce, powDiff)
+                                val capVerBodyStr = JSONObject().apply {
+                                    put("pow_token", powToken)
+                                    put("solution", solutionStr)
+                                    put("fingerprint", fingerprint)
+                                }.toString()
+
+                                okHttpClient.newCall(
+                                    buildEmbedReq("$embedOrigin/api/videos/$code/embed/captcha/verify", capVerBodyStr)
+                                ).execute().use { capVerResp ->
+                                    if (capVerResp.isSuccessful) {
+                                        val capVerJson = JSONObject(capVerResp.body?.string() ?: "{}")
+                                        val captchaToken = capVerJson.optString("token", "").ifEmpty { capVerJson.optString("captcha_token", "") }
+                                        okHttpClient.newCall(
+                                            buildEmbedReq("$embedOrigin/api/videos/$code/embed/playback", pbPayloadStr, captchaToken)
+                                        ).execute().use { pbResp ->
+                                            pbJson = JSONObject(pbResp.body?.string() ?: "{}")
+                                        }
+                                    }
+                                }
+                            } else {
+                                okHttpClient.newCall(
+                                    buildEmbedReq("$embedOrigin/api/videos/$code/embed/playback", pbPayloadStr)
+                                ).execute().use { pbResp ->
+                                    pbJson = JSONObject(pbResp.body?.string() ?: "{}")
+                                }
+                            }
+                        } else {
+                            okHttpClient.newCall(
+                                buildEmbedReq("$embedOrigin/api/videos/$code/embed/playback", pbPayloadStr)
+                            ).execute().use { pbResp ->
+                                pbJson = JSONObject(pbResp.body?.string() ?: "{}")
+                            }
+                        }
                     }
+
+                    val playbackObj = pbJson.optJSONObject("playback")
+                    if (playbackObj == null) {
+                        byseAttestCache.remove(candOrigin)
+                        if (usedCached) continue else break
+                    }
+
+                    val sourcesList = mutableListOf<String>()
+                    var bestHeight = 0
+                    var bestBitrateKbps = 0
+                    var bestLabel = ""
+                    var bestSizeBytes = 0L
+
+                    fun extractSourcesFromDecrypted(decJson: JSONObject?) {
+                        val arr = decJson?.optJSONArray("sources") ?: return
+                        for (i in 0 until arr.length()) {
+                            val s = arr.optJSONObject(i) ?: continue
+                            val u = s.optString("url", "")
+                            if (u.startsWith("http")) {
+                                sourcesList.add(u)
+                                val h = s.optInt("height", 0)
+                                val br = s.optInt("bitrate_kbps", 0)
+                                val lbl = s.optString("label", "")
+                                val sz = s.optLong("size_bytes", 0L)
+                                if (h > bestHeight) bestHeight = h
+                                if (br > bestBitrateKbps) bestBitrateKbps = br
+                                if (bestLabel.isEmpty() && lbl.isNotEmpty()) bestLabel = lbl
+                                if (sz > bestSizeBytes && sz != 4294967295L) bestSizeBytes = sz
+                            }
+                        }
+                    }
+
+                    val payload1 = playbackObj.optString("payload", "")
+                    val iv1 = playbackObj.optString("iv", "")
+                    val kp1 = playbackObj.optJSONArray("key_parts")
+                    val ver1 = playbackObj.optString("version", "1")
+                    if (payload1.isNotEmpty() && iv1.isNotEmpty() && kp1 != null && kp1.length() >= 2) {
+                        extractSourcesFromDecrypted(decryptByseAesGcm(payload1, iv1, kp1, ver1))
+                    }
+
+                    val payload2 = playbackObj.optString("payload2", "")
+                    val iv2 = playbackObj.optString("iv2", "")
+                    val kp2 = playbackObj.optJSONArray("key_parts2")
+                    val ver2 = playbackObj.optString("version2", ver1)
+                    if (payload2.isNotEmpty() && iv2.isNotEmpty() && kp2 != null && kp2.length() >= 2) {
+                        extractSourcesFromDecrypted(decryptByseAesGcm(payload2, iv2, kp2, ver2))
+                    }
+
+                    val bestM3u8 = sourcesList.firstOrNull { !it.lowercase().contains("byse") && it.lowercase().contains(".m3u8") }
+                        ?: sourcesList.firstOrNull { it.lowercase().contains(".m3u8") }
+                        ?: sourcesList.firstOrNull()
+
+                    if (!bestM3u8.isNullOrBlank()) {
+                        try {
+                            metaLatch.await(450, TimeUnit.MILLISECONDS)
+                        } catch (_: Exception) {}
+
+                        val detectedAudios = org.json.JSONArray()
+                        val addedLangs = mutableSetOf<String>()
+                        fun addLang(l: String) {
+                            if (l.isNotEmpty() && addedLangs.add(l)) detectedAudios.put(l)
+                        }
+                        val combinedMeta = "$defaultLangCode $videoTitle".lowercase()
+                        if (combinedMeta.contains("hin") || Regex("\\bhi\\b").containsMatchIn(combinedMeta)) addLang("Hindi")
+                        if (combinedMeta.contains("eng") || Regex("\\ben\\b").containsMatchIn(combinedMeta)) addLang("English")
+                        if (combinedMeta.contains("tam") || Regex("\\bta\\b").containsMatchIn(combinedMeta)) addLang("Tamil")
+                        if (combinedMeta.contains("tel") || Regex("\\bte\\b").containsMatchIn(combinedMeta)) addLang("Telugu")
+                        if (combinedMeta.contains("mal") || Regex("\\bml\\b").containsMatchIn(combinedMeta)) addLang("Malayalam")
+                        if (combinedMeta.contains("kan") || Regex("\\bkn\\b").containsMatchIn(combinedMeta)) addLang("Kannada")
+                        if (combinedMeta.contains("jpn") || combinedMeta.contains("jap")) addLang("Japanese")
+                        if (combinedMeta.contains("kor")) addLang("Korean")
+
+                        val resObj = buildSuccessResponse(bestM3u8, "$embedOrigin/", "kotlin_byse_aes_gcm", ProviderType.FILEMOON).apply {
+                            put("byseMeta", JSONObject().apply {
+                                put("height", bestHeight)
+                                put("bitrateKbps", bestBitrateKbps)
+                                put("label", bestLabel)
+                                put("sizeBytes", bestSizeBytes)
+                                put("audioTracks", detectedAudios)
+                            })
+                        }
+                        bysePlaybackCache[code] = Pair(resObj.toString(), System.currentTimeMillis() + 10 * 60 * 1000L)
+                        return resObj
+                    }
+                    break
                 }
-            }
-
-            val payload1 = playbackObj.optString("payload", "")
-            val iv1 = playbackObj.optString("iv", "")
-            val kp1 = playbackObj.optJSONArray("key_parts")
-            val ver1 = playbackObj.optString("version", "1")
-            if (payload1.isNotEmpty() && iv1.isNotEmpty() && kp1 != null && kp1.length() >= 2) {
-                extractSourcesFromDecrypted(decryptByseAesGcm(payload1, iv1, kp1, ver1))
-            }
-
-            val payload2 = playbackObj.optString("payload2", "")
-            val iv2 = playbackObj.optString("iv2", "")
-            val kp2 = playbackObj.optJSONArray("key_parts2")
-            val ver2 = playbackObj.optString("version2", ver1)
-            if (payload2.isNotEmpty() && iv2.isNotEmpty() && kp2 != null && kp2.length() >= 2) {
-                extractSourcesFromDecrypted(decryptByseAesGcm(payload2, iv2, kp2, ver2))
-            }
-
-            val bestM3u8 = sourcesList.firstOrNull { !it.lowercase().contains("byse") && it.lowercase().contains(".m3u8") }
-                ?: sourcesList.firstOrNull { it.lowercase().contains(".m3u8") }
-                ?: sourcesList.firstOrNull()
-
-            if (!bestM3u8.isNullOrBlank()) {
-                val detectedAudios = org.json.JSONArray()
-                val addedLangs = mutableSetOf<String>()
-                fun addLang(l: String) {
-                    if (l.isNotEmpty() && addedLangs.add(l)) detectedAudios.put(l)
-                }
-                val combinedMeta = "$defaultLangCode $videoTitle".lowercase()
-                if (combinedMeta.contains("hin") || Regex("\\bhi\\b").containsMatchIn(combinedMeta)) addLang("Hindi")
-                if (combinedMeta.contains("eng") || Regex("\\ben\\b").containsMatchIn(combinedMeta)) addLang("English")
-                if (combinedMeta.contains("tam") || Regex("\\bta\\b").containsMatchIn(combinedMeta)) addLang("Tamil")
-                if (combinedMeta.contains("tel") || Regex("\\bte\\b").containsMatchIn(combinedMeta)) addLang("Telugu")
-                if (combinedMeta.contains("mal") || Regex("\\bml\\b").containsMatchIn(combinedMeta)) addLang("Malayalam")
-                if (combinedMeta.contains("kan") || Regex("\\bkn\\b").containsMatchIn(combinedMeta)) addLang("Kannada")
-                if (combinedMeta.contains("jpn") || combinedMeta.contains("jap")) addLang("Japanese")
-                if (combinedMeta.contains("kor")) addLang("Korean")
-
-                val resObj = buildSuccessResponse(bestM3u8, "$embedOrigin/", "kotlin_byse_aes_gcm", ProviderType.FILEMOON).apply {
-                    put("byseMeta", JSONObject().apply {
-                        put("height", bestHeight)
-                        put("bitrateKbps", bestBitrateKbps)
-                        put("label", bestLabel)
-                        put("sizeBytes", bestSizeBytes)
-                        put("audioTracks", detectedAudios)
-                    })
-                }
-                bysePlaybackCache[code] = Pair(resObj.toString(), System.currentTimeMillis() + 10 * 60 * 1000L)
-                return resObj
             }
             null
         } catch (_: Exception) {
@@ -799,7 +891,7 @@ class InbuiltStreamScraper(
         return try {
             val verNum = versionStr.trim().toIntOrNull() ?: 0
             val len = keyPartsArr.length()
-            val (kp0, kp1) = if (verNum in 1..20 && len >= 31 - verNum) {
+            val (kp0, kp1) = if (verNum in 1..20 && verNum <= len && (31 - verNum) in 1..len) {
                 Pair(keyPartsArr.optString(verNum - 1), keyPartsArr.optString(31 - verNum - 1))
             } else {
                 Pair(keyPartsArr.optString(0), keyPartsArr.optString(1))

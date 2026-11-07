@@ -55,7 +55,9 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             if (cleanHost.contains("sprintcdn") || cleanHost.contains("owphbf") ||
                 cleanHost.contains("r66nv9ed") || cleanHost.contains("n1mwq") ||
                 cleanHost.contains("byseraguci") || cleanHost.contains("bysedikamoum") ||
-                cleanHost.contains("filemoon")
+                cleanHost.contains("filemoon") || cleanHost.contains("f16px") ||
+                cleanHost.contains("1azayf9w") || cleanHost.contains("8mhlloqo") ||
+                cleanHost.contains("kerapoxy") || cleanHost.contains("moonmov")
             ) {
                 return "https://byseraguci.com/"
             }
@@ -63,6 +65,29 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
                 return "https://voe.sx/"
             }
             return lastActiveReferer ?: "$fallbackScheme://$host/"
+        }
+
+        fun isKnownStreamCdnHost(host: String): Boolean {
+            val cleanHost = host.lowercase()
+            if (hostRefererMap.containsKey(cleanHost)) return true
+            val root = extractRootDomain(cleanHost)
+            if (root.isNotEmpty() && hostRefererMap.containsKey(root)) return true
+            return cleanHost.contains("sprintcdn") ||
+                cleanHost.contains("owphbf") ||
+                cleanHost.contains("r66nv9ed") ||
+                cleanHost.contains("n1mwq") ||
+                cleanHost.contains("byseraguci") ||
+                cleanHost.contains("bysedikamoum") ||
+                cleanHost.contains("filemoon") ||
+                cleanHost.contains("f16px") ||
+                cleanHost.contains("1azayf9w") ||
+                cleanHost.contains("8mhlloqo") ||
+                cleanHost.contains("kerapoxy") ||
+                cleanHost.contains("moonmov") ||
+                cleanHost.contains("voe.") ||
+                cleanHost.contains("streamwish") ||
+                cleanHost.contains("hlswish") ||
+                cleanHost.contains("vidhide")
         }
 
         private fun extractRootDomain(host: String): String {
@@ -139,6 +164,18 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             }
         }
 
+        // 0.6 Unblock CORS OPTIONS preflight for Byse/Filemoon /api/videos/... endpoints
+        if (path.startsWith("/api/videos/") && method == "OPTIONS") {
+            return WebResourceResponse(
+                "text/plain",
+                "UTF-8",
+                200,
+                "OK",
+                buildCorsHeaders("text/plain"),
+                ByteArrayInputStream(ByteArray(0))
+            )
+        }
+
         // 1. Serve Local Bundled WebApp & Native Proxy on https://appassets.androidplatform.net
         if (host == VIRTUAL_ASSET_HOST) {
             if (method == "OPTIONS") {
@@ -153,6 +190,20 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             }
 
             val rawPath = uri.path ?: "/"
+
+            // 1a. If WebApp calls /api/extract-stream on VIRTUAL_ASSET_HOST, return clean JSON {"ok":false}
+            //     instead of falling through to index.html so SmartStreamService immediately uses native/client fallback.
+            if (rawPath.startsWith("/api/")) {
+                val apiFallback = """{"ok":false,"error":"Local asset host has no cloud backend route"}""".toByteArray(Charsets.UTF_8)
+                return WebResourceResponse(
+                    "application/json",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    buildCorsHeaders("application/json"),
+                    ByteArrayInputStream(apiFallback)
+                )
+            }
 
             // 1b. Disable PWA sw.js inside native APK since assets are already 100% local in APK
             if (rawPath == "/sw.js") {
@@ -207,7 +258,37 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             }
         }
 
-        // 2. FAST-PATH BYPASS: Never intercept Firebase, Google APIs, or Images/Posters/Fonts!
+        // 2. PRIORITY HLS & STREAM CDN INTERCEPTION (Runs BEFORE static image/font fast-path bypass
+        //    so disguised HLS segments ending in .jpg, .png, .webp, .ico, .woff2, .html, .txt on
+        //    SprintCDN / Byse / Filemoon / Voe are NEVER skipped!)
+        val lower = reqUrl.lowercase()
+        val isHlsOrSegment =
+            lower.contains(".m3u8") ||
+                path.endsWith(".ts") ||
+                path.endsWith(".m4s") ||
+                lower.contains("/hls2/") ||
+                lower.contains("master.txt") ||
+                lower.contains("urlset") ||
+                isKnownStreamCdnHost(host)
+
+        if (isHlsOrSegment && (lower.startsWith("http://") || lower.startsWith("https://"))) {
+            if (method == "OPTIONS") {
+                return WebResourceResponse(
+                    "text/plain",
+                    "UTF-8",
+                    200,
+                    "OK",
+                    buildCorsHeaders("text/plain"),
+                    ByteArrayInputStream(ByteArray(0))
+                )
+            }
+            if (method == "GET" || method == "HEAD") {
+                val proxied = proxyExternalUrlWithOkHttp(reqUrl, request)
+                if (proxied != null) return proxied
+            }
+        }
+
+        // 3. FAST-PATH BYPASS: Never intercept Firebase, Google APIs, or normal Images/Posters/Fonts!
         //    Letting Chromium's native C++ HTTP/2 engine & disk cache handle these directly
         //    eliminates worker-thread bottlenecks and makes posters & Firestore data load instantly.
         if (host == "127.0.0.1" ||
@@ -238,35 +319,75 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             return null
         }
 
-        // 3. Intercept external HLS manifests (.m3u8) and segments (.ts, .m4s, /hls2/) to inject Referer & CORS headers
-        val lower = reqUrl.lowercase()
-        val isHlsOrSegment =
-            lower.contains(".m3u8") ||
-                path.endsWith(".ts") ||
-                path.endsWith(".m4s") ||
-                lower.contains("/hls2/") ||
-                host.contains("sprintcdn") ||
-                host.contains("owphbf") ||
-                host.contains("r66nv9ed") ||
-                lower.contains("master.txt") ||
-                lower.contains("urlset")
-
-        if (isHlsOrSegment && (lower.startsWith("http://") || lower.startsWith("https://"))) {
-            if (method == "OPTIONS") {
-                return WebResourceResponse(
-                    "text/plain",
-                    "UTF-8",
-                    200,
-                    "OK",
-                    buildCorsHeaders("text/plain"),
-                    ByteArrayInputStream(ByteArray(0))
-                )
-            }
-            val proxied = proxyExternalUrlWithOkHttp(reqUrl, request)
-            if (proxied != null) return proxied
-        }
-
         return null
+    }
+
+    private fun resolveHlsRelativeUrl(baseUrl: String, relativeOrAbs: String): String {
+        val trimmed = relativeOrAbs.trim()
+        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            return trimmed
+        }
+        return try {
+            java.net.URL(java.net.URL(baseUrl), trimmed).toString()
+        } catch (_: Exception) {
+            trimmed
+        }
+    }
+
+    private fun buildLocalProxyUrl(targetUrl: String, referer: String): String {
+        val encUrl = java.net.URLEncoder.encode(targetUrl, "UTF-8")
+        val encRef = java.net.URLEncoder.encode(referer, "UTF-8")
+        return "$VIRTUAL_ASSET_ORIGIN/api/proxy?url=$encUrl&referer=$encRef"
+    }
+
+    private fun rewriteM3u8ManifestForLocalProxy(
+        manifestText: String,
+        baseUrl: String,
+        customReferer: String
+    ): String {
+        val uriAttrRegex = Regex("""URI="([^"]+)"""")
+        val lines = manifestText.lines()
+        val sb = StringBuilder(manifestText.length + 1024)
+
+        for (i in lines.indices) {
+            val rawLine = lines[i]
+            val trimmed = rawLine.trim()
+            if (trimmed.isEmpty()) {
+                sb.append("\n")
+                continue
+            }
+
+            if (trimmed.startsWith("#")) {
+                val rewrittenTag = if (trimmed.contains("URI=\"")) {
+                    uriAttrRegex.replace(trimmed) { matchResult ->
+                        val innerUri = matchResult.groupValues[1]
+                        if (innerUri.isBlank() ||
+                            innerUri.startsWith("data:", ignoreCase = true) ||
+                            innerUri.contains("/api/proxy?url=") ||
+                            innerUri.contains("maxplay.local")
+                        ) {
+                            matchResult.value
+                        } else {
+                            val resolved = resolveHlsRelativeUrl(baseUrl, innerUri)
+                            registerStreamReferer(resolved, customReferer)
+                            "URI=\"${buildLocalProxyUrl(resolved, customReferer)}\""
+                        }
+                    }
+                } else {
+                    trimmed
+                }
+                sb.append(rewrittenTag).append("\n")
+            } else {
+                if (trimmed.contains("/api/proxy?url=") || trimmed.contains("maxplay.local")) {
+                    sb.append(trimmed).append("\n")
+                } else {
+                    val resolved = resolveHlsRelativeUrl(baseUrl, trimmed)
+                    registerStreamReferer(resolved, customReferer)
+                    sb.append(buildLocalProxyUrl(resolved, customReferer)).append("\n")
+                }
+            }
+        }
+        return sb.toString()
     }
 
     private fun proxyExternalUrlWithOkHttp(
@@ -283,12 +404,20 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
             } else {
                 resolveRefererForHost(host, scheme)
             }
+            registerStreamReferer(targetUrl, customReferer)
+
             val customOrigin = try {
                 val refUri = android.net.Uri.parse(customReferer)
                 "${refUri.scheme ?: "https"}://${refUri.host ?: host}"
             } catch (_: Exception) {
                 "$scheme://$host"
             }
+
+            val lowerUrl = targetUrl.lowercase()
+            val isLikelyPlaylist =
+                lowerUrl.contains(".m3u8") ||
+                    lowerUrl.contains("master.txt") ||
+                    lowerUrl.contains("urlset")
 
             val okReqBuilder = Request.Builder()
                 .url(targetUrl)
@@ -297,15 +426,68 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
                 .header("Referer", customReferer)
                 .header("Origin", customOrigin)
 
-            request.requestHeaders?.get("Range")?.let { rangeHeader ->
-                okReqBuilder.header("Range", rangeHeader)
+            if (!isLikelyPlaylist) {
+                // Prevent transparent gzip on binary segments so Content-Length & byte ranges stay 1:1
+                okReqBuilder.header("Accept-Encoding", "identity")
+            }
+
+            val rangeHdr = request.requestHeaders?.get("Range") ?: request.requestHeaders?.get("range")
+            if (!rangeHdr.isNullOrBlank()) {
+                okReqBuilder.header("Range", rangeHdr)
             }
 
             val response = InbuiltStreamScraper.okHttpClient.newCall(okReqBuilder.build()).execute()
             val statusCode = response.code
-            val lowerUrl = targetUrl.lowercase()
+            val finalResolvedUrl = response.request.url.toString()
+            registerStreamReferer(finalResolvedUrl, customReferer)
+
             val contentTypeRaw = response.header("Content-Type") ?: guessMediaMimeType(lowerUrl)
-            val mimeType = contentTypeRaw.substringBefore(";").trim().ifEmpty { "application/octet-stream" }
+            var mimeType = contentTypeRaw.substringBefore(";").trim().ifEmpty { "application/octet-stream" }
+
+            val isPlaylistResponse =
+                isLikelyPlaylist ||
+                    mimeType.contains("mpegurl", ignoreCase = true) ||
+                    mimeType.contains("x-mpegurl", ignoreCase = true)
+
+            if (isPlaylistResponse && response.isSuccessful) {
+                val bodyText = response.body?.string() ?: ""
+                if (bodyText.trimStart().startsWith("#EXTM3U")) {
+                    val rewrittenText = rewriteM3u8ManifestForLocalProxy(bodyText, finalResolvedUrl, customReferer)
+                    val outBytes = rewrittenText.toByteArray(Charsets.UTF_8)
+                    val outMime = "application/vnd.apple.mpegurl"
+                    val headers = buildCorsHeaders(outMime).toMutableMap()
+                    headers["Content-Length"] = outBytes.size.toString()
+                    headers["Cache-Control"] = "no-store"
+                    return WebResourceResponse(
+                        outMime,
+                        "UTF-8",
+                        statusCode,
+                        response.message.ifEmpty { "OK" },
+                        headers,
+                        ByteArrayInputStream(outBytes)
+                    )
+                } else {
+                    val rawBytes = bodyText.toByteArray(Charsets.UTF_8)
+                    val headers = buildCorsHeaders(mimeType).toMutableMap()
+                    headers["Content-Length"] = rawBytes.size.toString()
+                    return WebResourceResponse(
+                        mimeType,
+                        "UTF-8",
+                        statusCode,
+                        response.message.ifEmpty { "OK" },
+                        headers,
+                        ByteArrayInputStream(rawBytes)
+                    )
+                }
+            }
+
+            // For disguised segments (.jpg, .png, .webp, .html, .txt) on HLS CDNs, normalize MIME type to video/mp2t
+            // so hls.js / MSE never rejects segment buffers due to image/* Content-Type headers.
+            if (lowerUrl.contains("/hls2/") || isKnownStreamCdnHost(host)) {
+                if (mimeType.startsWith("image/") || mimeType.startsWith("text/html")) {
+                    mimeType = "video/mp2t"
+                }
+            }
 
             val responseHeaders = buildCorsHeaders(mimeType).toMutableMap()
             response.header("Content-Length")?.let { responseHeaders["Content-Length"] = it }
@@ -316,7 +498,7 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
 
             WebResourceResponse(
                 mimeType,
-                "UTF-8",
+                null,
                 statusCode,
                 response.message.ifEmpty { "OK" },
                 responseHeaders,
@@ -362,8 +544,9 @@ class CorsFreeWebViewClient(private val context: Context) : WebViewClient() {
         return mapOf(
             "Access-Control-Allow-Origin" to "*",
             "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
-            "Access-Control-Allow-Headers" to "*",
+            "Access-Control-Allow-Headers" to "Content-Type, Accept, Range, Authorization, X-Captcha-Token, X-Embed-Origin, X-Embed-Referer, X-Embed-Parent, *",
             "Access-Control-Expose-Headers" to "Content-Length, Content-Range, Accept-Ranges",
+            "Access-Control-Max-Age" to "86400",
             "Content-Type" to contentType
         )
     }

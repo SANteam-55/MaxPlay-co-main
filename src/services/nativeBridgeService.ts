@@ -836,6 +836,7 @@ export class NativeBridgeService {
 
       // Extract Variant Streams
       const lines = text.split('\n');
+      let firstVariantSubPlaylistUrl = '';
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (line.startsWith('#EXT-X-STREAM-INF:')) {
@@ -864,6 +865,10 @@ export class NativeBridgeService {
               resolvedUrl = new URL(nextUrl, m3u8Url).toString();
             } catch {}
 
+            if (!firstVariantSubPlaylistUrl) {
+              firstVariantSubPlaylistUrl = resolvedUrl;
+            }
+
             const qLabel =
               height >= 1000
                 ? '1080p'
@@ -884,7 +889,8 @@ export class NativeBridgeService {
             }
             if (!qualities.includes(qLabel)) {
               qualities.push(qLabel);
-              qualityLinks[qLabel] = resolvedUrl;
+              // Keep master m3u8Url when separate #EXT-X-MEDIA:TYPE=AUDIO tracks exist so audio is never lost
+              qualityLinks[qLabel] = audioLines.length > 0 ? m3u8Url : resolvedUrl;
             }
           }
         }
@@ -906,7 +912,7 @@ export class NativeBridgeService {
           detectedDuration = Math.round(segSum);
         }
       } else if (!skipSubPlaylistDurationFetch && qualities.length > 0) {
-        const firstVariantUrl = qualityLinks[qualities[0]];
+        const firstVariantUrl = firstVariantSubPlaylistUrl || qualityLinks[qualities[0]];
         if (firstVariantUrl && firstVariantUrl !== m3u8Url) {
           try {
             const subText = await this.fetchTextCorsFree(firstVariantUrl, headers);

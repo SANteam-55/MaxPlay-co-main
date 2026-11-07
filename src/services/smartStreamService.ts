@@ -33,7 +33,7 @@ interface ClientCachedStream {
   meta?: CachedStreamMetadata;
 }
 
-const CACHE_PREFIX = "maxplay_hls_stream_v2_";
+const CACHE_PREFIX = "maxplay_hls_stream_v3_";
 
 export class SmartStreamService {
   /**
@@ -857,7 +857,13 @@ export class SmartStreamService {
               try {
                 const verNum = parseInt(String(version ?? "").trim(), 10);
                 let selectedParts = kParts.slice(0, 2);
-                if (verNum >= 1 && verNum <= 20 && kParts.length >= 31 - verNum) {
+                if (
+                  verNum >= 1 &&
+                  verNum <= 20 &&
+                  verNum <= kParts.length &&
+                  31 - verNum >= 1 &&
+                  31 - verNum <= kParts.length
+                ) {
                   selectedParts = [kParts[verNum - 1], kParts[31 - verNum - 1]];
                 }
                 const k0 = fromB64Url(selectedParts[0]);
@@ -958,7 +964,7 @@ export class SmartStreamService {
                 m3u8Url: bestM3u8,
                 meta: {
                   qualities: [qLabel],
-                  qualityLinks: { [qLabel]: sourceUrl },
+                  qualityLinks: { [qLabel]: bestM3u8 },
                   rawM3u8Url: bestM3u8,
                   downloadQualities: [
                     {
@@ -1003,32 +1009,7 @@ export class SmartStreamService {
       lowerUrl.includes("moonmov") ||
       lowerUrl.includes("kerapoxy");
 
-    // 1.2 Fast-Path Direct Client-Side Byse / Filemoon API Extraction (in Kotlin APK, resolves in ~350ms without waiting on WebView Sniffer)
-    if (isKotlinApp && isByseOrFilemoon) {
-      try {
-        const clientByse = await this.extractByseClientSide(trimmed);
-        if (clientByse.ok && clientByse.m3u8Url) {
-          const ttlMs = 170 * 60 * 1000;
-          const expiresAt = Date.now() + ttlMs;
-          const chosenUrl = clientByse.m3u8Url;
-          const meta: CachedStreamMetadata = {
-            ...(clientByse.meta || {}),
-            rawM3u8Url: clientByse.m3u8Url,
-          };
-          this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
-          this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
-          return {
-            streamUrl: chosenUrl,
-            isExtracted: true,
-            cached: false,
-            isEmbed: false,
-            expiresAt,
-          };
-        }
-      } catch {}
-    }
-
-    // 1.5 Priority Tier (Android APK): Inbuilt Native Kotlin Scraper & Headless Sniffer (Zero CORS)
+    // 1.1 Priority Tier (Android APK): Inbuilt Native Kotlin Scraper & Multi-Core Byse Engine (Zero CORS, Off-UI Thread)
     if (isKotlinApp) {
       try {
         const nativeRes = await NativeBridgeService.extractStreamNative(trimmed);
@@ -1036,6 +1017,7 @@ export class SmartStreamService {
           const ttlMs = 170 * 60 * 1000;
           const expiresAt = Date.now() + ttlMs;
           const refHeader = nativeRes.headers?.Referer || nativeRes.headers?.referer || this.resolveEmbedReferer(trimmed);
+          this.registerStreamHostReferer(nativeRes.m3u8Url, refHeader);
           const metaPayload: CachedStreamMetadata = {
             qualities: nativeRes.qualities,
             qualityLinks: nativeRes.qualityLinks,
@@ -1059,6 +1041,31 @@ export class SmartStreamService {
       } catch (nativeErr) {
         console.warn("[SmartStreamService] Native Kotlin scraper fallback to client/server:", nativeErr);
       }
+    }
+
+    // 1.2 Fallback Client-Side Byse / Filemoon API Extraction in Kotlin APK
+    if (isKotlinApp && isByseOrFilemoon) {
+      try {
+        const clientByse = await this.extractByseClientSide(trimmed);
+        if (clientByse.ok && clientByse.m3u8Url) {
+          const ttlMs = 170 * 60 * 1000;
+          const expiresAt = Date.now() + ttlMs;
+          const chosenUrl = clientByse.m3u8Url;
+          const meta: CachedStreamMetadata = {
+            ...(clientByse.meta || {}),
+            rawM3u8Url: clientByse.m3u8Url,
+          };
+          this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
+          this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
+          return {
+            streamUrl: chosenUrl,
+            isExtracted: true,
+            cached: false,
+            isEmbed: false,
+            expiresAt,
+          };
+        }
+      } catch {}
     }
 
     // 2. Call backend proxy endpoint
@@ -1094,7 +1101,7 @@ export class SmartStreamService {
             const refHeader = result.headers?.Referer || result.headers?.referer || this.resolveEmbedReferer(trimmed);
             const meta: CachedStreamMetadata = {
               qualities: result.qualities,
-              qualityLinks: result.qualityLinks,
+              qualityLinks: isKotlinApp ? (result.rawQualityLinks || result.qualityLinks) : result.qualityLinks,
               rawM3u8Url: result.rawM3u8Url || chosenM3u8,
               proxiedM3u8Url: result.m3u8Url,
               downloadQualities: result.downloadQualities,

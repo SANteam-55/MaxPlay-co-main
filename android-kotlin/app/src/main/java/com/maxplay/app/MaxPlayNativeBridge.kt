@@ -120,15 +120,30 @@ class MaxPlayNativeBridge(
     fun fetchUrlCorsFree(targetUrl: String, headersJson: String?): String {
         val out = JSONObject()
         try {
+            var effectiveUrl = targetUrl.trim()
+            var proxyReferer = ""
+            if (effectiveUrl.contains("/api/proxy?url=")) {
+                try {
+                    val u = android.net.Uri.parse(
+                        if (effectiveUrl.startsWith("/")) "https://appassets.androidplatform.net$effectiveUrl" else effectiveUrl
+                    )
+                    u.getQueryParameter("url")?.takeIf { it.isNotBlank() }?.let { effectiveUrl = it }
+                    u.getQueryParameter("referer")?.takeIf { it.isNotBlank() }?.let { proxyReferer = it }
+                } catch (_: Exception) {}
+            }
             val headersMap = parseHeadersJson(headersJson)
-            val host = try { java.net.URL(targetUrl).host } catch (_: Exception) { "" }
+            val host = try { java.net.URL(effectiveUrl).host } catch (_: Exception) { "" }
             val defaultRef = CorsFreeWebViewClient.resolveRefererForHost(host)
-            val passedRef = headersMap["Referer"] ?: headersMap["referer"] ?: ""
+            val passedRef = headersMap["Referer"] ?: headersMap["referer"] ?: proxyReferer
             val effRef = passedRef.ifBlank { defaultRef }
             val effOrigin = headersMap["Origin"] ?: headersMap["origin"] ?: deriveOriginFromReferer(effRef)
 
+            if (effRef.isNotEmpty()) {
+                CorsFreeWebViewClient.registerStreamReferer(effectiveUrl, effRef)
+            }
+
             val reqBuilder = Request.Builder()
-                .url(targetUrl)
+                .url(effectiveUrl)
                 .header("User-Agent", InbuiltStreamScraper.DEFAULT_USER_AGENT)
                 .header("Accept", "*/*")
                 .header("Referer", effRef)
@@ -690,7 +705,12 @@ class MaxPlayNativeBridge(
                     vSizeMb = Math.max(5, ((fallbackBps * detectedDuration) / (8L * 1024L * 1024L)).toInt()) + separateAudioMb
                 }
 
-                val assignedUrl = if (forcedQuality.isNotBlank() || effectiveVariants.size == 1) sourceUrl else v.url
+                val isProviderSource = !sourceUrl.lowercase().contains(".m3u8")
+                val assignedUrl = if (isProviderSource || audioPlaylistsFirstUrl.isNotEmpty() || forcedQuality.isNotBlank() || effectiveVariants.size == 1) {
+                    sourceUrl
+                } else {
+                    v.url
+                }
                 qualitiesArr.put(v.quality)
                 qualityLinksObj.put(v.quality, assignedUrl)
                 downloadQualitiesArr.put(JSONObject().apply {
