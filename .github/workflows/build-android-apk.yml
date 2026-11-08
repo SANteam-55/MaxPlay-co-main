@@ -36,10 +36,49 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK & Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Cache Gradle 8.5 & Android Build Caches
+        uses: actions/cache@v4
         with:
-          gradle-version: '8.5'
+          path: |
+            /opt/gradle/gradle-8.5
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-8.5-${{ hashFiles('android-kotlin/**/*.gradle*', 'android-kotlin/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-8.5-
+
+      - name: Setup Android SDK & Gradle
+        run: |
+          if [ ! -x /opt/gradle/gradle-8.5/bin/gradle ]; then
+            echo "Downloading Gradle 8.5 with multi-mirror fallback..."
+            sudo mkdir -p /opt/gradle
+            DL_OK=0
+            for URL in \
+              "https://mirrors.cloud.tencent.com/gradle/gradle-8.5-bin.zip" \
+              "https://mirrors.aliyun.com/macports/distfiles/gradle/gradle-8.5-bin.zip" \
+              "https://services.gradle.org/distributions/gradle-8.5-bin.zip" \
+              "https://downloads.gradle.org/distributions/gradle-8.5-bin.zip" \
+              "https://github.com/gradle/gradle-distributions/releases/download/v8.5.0/gradle-8.5-bin.zip"; do
+              echo "Trying $URL ..."
+              if curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 90 "$URL" -o /tmp/gradle-8.5-bin.zip; then
+                if unzip -tq /tmp/gradle-8.5-bin.zip >/dev/null 2>&1; then
+                  sudo unzip -q -o /tmp/gradle-8.5-bin.zip -d /opt/gradle
+                  rm -f /tmp/gradle-8.5-bin.zip
+                  DL_OK=1
+                  break
+                fi
+              fi
+            done
+            if [ "$DL_OK" -ne 1 ]; then
+              echo "Fallback to pre-installed runner Gradle..."
+            fi
+          fi
+          if [ -x /opt/gradle/gradle-8.5/bin/gradle ]; then
+            echo "/opt/gradle/gradle-8.5/bin" >> $GITHUB_PATH
+            /opt/gradle/gradle-8.5/bin/gradle --version
+          else
+            gradle --version
+          fi
 
       - name: Generate Release Keystore & Compile Signed MaxPlay + MaxPlay Admin Release APKs
         working-directory: ./android-kotlin
