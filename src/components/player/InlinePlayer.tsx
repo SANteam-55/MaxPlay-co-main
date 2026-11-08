@@ -945,19 +945,13 @@ export const InlinePlayer: React.FC<InlinePlayerProps> = ({
       );
       const candidate = smartSelected.chosenUrl || smartSelected.url;
 
-      // Only override candidate with videoUrl if candidate is an expired temporary token AND user did not configure separate hoster links
+      // Override candidate with videoUrl if candidate is an expired temporary HLS token AND videoUrl is a permanent extractable source
       if (
         videoUrl &&
-        Object.keys(links).length === 1 &&
         SmartStreamService.isExtractableSource(videoUrl, isSmartHls) &&
         candidate &&
-        !SmartStreamService.isExtractableSource(candidate, isSmartHls) &&
-        (candidate.includes('?t=') ||
-          candidate.includes('sprintcdn') ||
-          candidate.includes('owphbf') ||
-          candidate.includes('/proxy/m3u8') ||
-          candidate.includes('voe-network') ||
-          candidate.includes('master.m3u8'))
+        (!SmartStreamService.isExtractableSource(candidate, isSmartHls) ||
+          SmartStreamService.isTemporaryHlsUrl(candidate))
       ) {
         return SmartStreamService.sanitizeStreamUrl(videoUrl);
       }

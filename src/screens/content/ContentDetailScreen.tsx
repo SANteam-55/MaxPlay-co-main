@@ -1185,6 +1185,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             playerQualityLinks,
             activeQuality
           );
+          playerQualityLinks = smartInit.cleanQualityLinks;
           playerVideoUrl = smartInit.chosenUrl;
         } else if (content.videoSources && typeof content.videoSources === 'object' && Object.keys(content.videoSources).length > 0) {
           playerVideoSources = content.videoSources;
@@ -1205,6 +1206,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             playerQualityLinks,
             activeQuality
           );
+          playerQualityLinks = smartInit.cleanQualityLinks;
           playerVideoUrl = smartInit.chosenUrl;
         } else {
           playerQualityLinks = { ...epQualityObj };
@@ -1213,6 +1215,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             playerQualityLinks,
             activeQuality
           );
+          playerQualityLinks = smartInit.cleanQualityLinks;
           playerVideoUrl = smartInit.chosenUrl;
         }
         if (currentEp.chunks) playerChunks = currentEp.chunks;
@@ -1244,6 +1247,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             playerQualityLinks,
             activeQuality
           );
+          playerQualityLinks = smartPart.cleanQualityLinks;
           playerVideoUrl = smartPart.chosenUrl;
         } else if (typeof extraPartObj === 'object' && Object.keys(partQualityObj).length > 0) {
           playerQualityLinks = { ...partQualityObj };
@@ -1252,6 +1256,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
             playerQualityLinks,
             activeQuality
           );
+          playerQualityLinks = smartPart.cleanQualityLinks;
           playerVideoUrl = smartPart.chosenUrl;
           playerVideoSources = {};
         } else if (typeof extraPartObj === 'object' && extraPartObj.videoUrl) {
@@ -1351,6 +1356,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           playerQualityLinks,
           activeQuality
         );
+        playerQualityLinks = smartMovie.cleanQualityLinks;
         playerVideoUrl = smartMovie.chosenUrl;
       } else if (typeof activeMoviePart === 'object' && Object.keys(movieQualityObj).length > 0) {
         playerQualityLinks = { ...movieQualityObj };
@@ -1359,6 +1365,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           playerQualityLinks,
           activeQuality
         );
+        playerQualityLinks = smartMovie.cleanQualityLinks;
         playerVideoUrl = smartMovie.chosenUrl;
         playerVideoSources = {};
       } else if (typeof activeMoviePart === 'string') {
@@ -1384,6 +1391,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           playerQualityLinks,
           activeQuality
         );
+        playerQualityLinks = smartMovie.cleanQualityLinks;
         playerVideoUrl = smartMovie.chosenUrl;
       } else {
         playerQualityLinks = { ...movieQualityObj };
@@ -1392,6 +1400,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           playerQualityLinks,
           activeQuality
         );
+        playerQualityLinks = smartMovie.cleanQualityLinks;
         playerVideoUrl = smartMovie.chosenUrl;
       }
     }
@@ -1413,12 +1422,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
           const qId = String(item?.id || item?.quality || '').trim();
           const qUrl = SmartStreamService.sanitizeStreamUrl(item?.url || '');
           // Ignore temporary expiring .m3u8 tokens stored inside downloadQualities verification arrays
-          const isTempHlsToken =
-            qUrl.includes('.m3u8') ||
-            qUrl.includes('/proxy/m3u8') ||
-            qUrl.includes('sprintcdn') ||
-            qUrl.includes('owphbf') ||
-            /[?&](t|token|exp|expires)=/i.test(qUrl);
+          const isTempHlsToken = SmartStreamService.isTemporaryHlsUrl(qUrl);
           if (qId && qUrl && !isTempHlsToken && !out[qId] && qId.toLowerCase() !== 'auto') {
             out[qId] = qUrl;
           }
@@ -1427,12 +1431,7 @@ export const ContentDetailScreen: React.FC<ContentDetailScreenProps> = ({
         for (const [k, v] of Object.entries(src)) {
           const cleanK = k.trim();
           const cleanV = typeof v === 'string' ? SmartStreamService.sanitizeStreamUrl(v) : '';
-          const isTempHlsToken =
-            cleanV.includes('/proxy/m3u8') ||
-            cleanV.includes('sprintcdn') ||
-            cleanV.includes('owphbf') ||
-            cleanV.includes('r66nv9ed') ||
-            /[?&](t|token|exp|expires)=/i.test(cleanV);
+          const isTempHlsToken = SmartStreamService.isTemporaryHlsUrl(cleanV);
           if (cleanK && cleanV && !isTempHlsToken && !out[cleanK] && cleanK.toLowerCase() !== 'auto') {
             out[cleanK] = cleanV;
           }

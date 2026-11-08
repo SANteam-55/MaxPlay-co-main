@@ -208,28 +208,13 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
     }
 
     // Check if source is an extractable stream (e.g. voe.sx) before probing
-    const isVoeOrExtractable = cleanUrl.includes("voe.sx") || cleanUrl.includes("voe.") || cleanUrl.includes("voe-network");
+    const isVoeOrExtractable = isVoeOrMirrorUrl(cleanUrl);
     if (isVoeOrExtractable) {
       try {
-        const extractorKey = (process.env.VOE_EXTRACTOR_KEY || "MaxPlayMasterPass777!").trim();
-        let rawBaseUrl = (process.env.VOE_EXTRACTOR_URL || "").trim();
-        if (!rawBaseUrl || rawBaseUrl.includes("ltargeturl") || rawBaseUrl.includes("voe.sx")) {
-          rawBaseUrl = "https://nawazkhan001-mw-hub-master.hf.space/api/extract";
-        }
-        if (rawBaseUrl.includes("?")) {
-          rawBaseUrl = rawBaseUrl.split("?")[0].trim();
-        }
-        const extractorBaseUrl = rawBaseUrl;
-        const apiUrl = `${extractorBaseUrl}?url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(extractorKey)}`;
-
-        const extRes = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
-        if (extRes.ok) {
-          const extData = await extRes.json();
-          const targetM3u8 = extData.m3u8Url || extData.url || extData.streamUrl;
-          if (targetM3u8 && typeof targetM3u8 === "string") {
-            const resolvedDur = await probeVideoDuration(targetM3u8);
-            if (resolvedDur > 0) return resolvedDur;
-          }
+        const directVoe = await extractVoeDirectStream(cleanUrl);
+        if (directVoe.ok && directVoe.m3u8Url) {
+          const resolvedDur = await probeVideoDuration(directVoe.m3u8Url);
+          if (resolvedDur > 0) return resolvedDur;
         }
       } catch (extErr) {
         console.warn("Probe VOE auto-extraction error:", extErr);
@@ -416,7 +401,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
   async function probeRemoteSegmentByteSize(segUrl: string, referer: string): Promise<number> {
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
     try {
-      const headRes = await fetch(segUrl, {
+      const headRes = await resilientFetchSprintCdn(segUrl, {
         method: 'HEAD',
         headers: { 'User-Agent': ua, 'Referer': referer, 'Accept': '*/*' },
         signal: AbortSignal.timeout(2500)
@@ -427,7 +412,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       }
     } catch {}
     try {
-      const rangeRes = await fetch(segUrl, {
+      const rangeRes = await resilientFetchSprintCdn(segUrl, {
         method: 'GET',
         headers: { 'User-Agent': ua, 'Referer': referer, 'Range': 'bytes=0-0', 'Accept': '*/*' },
         signal: AbortSignal.timeout(2500)
@@ -527,6 +512,8 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
   // Resilient SprintCDN / Byse IP Router: races & caches working IPv4 addresses to bypass cloud ASN blocks
   const sprintCdnWorkingIpCache = new Map<string, string>();
 
+  const hlsPlaylistTextCache = new Map<string, { text: string; expiresAt: number }>();
+
   async function resilientFetchSprintCdn(targetUrl: string, options: any = {}): Promise<{
     ok: boolean;
     status: number;
@@ -534,6 +521,36 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
     text(): Promise<string>;
     arrayBuffer(): Promise<ArrayBuffer>;
   }> {
+    const isGet = !options.method || String(options.method).toUpperCase() === "GET";
+    const lowerTarget = targetUrl.toLowerCase();
+    const pathBeforeQ = lowerTarget.split("?")[0];
+    const isPlaylistReq =
+      isGet &&
+      !options.headers?.["Range"] &&
+      !options.headers?.["range"] &&
+      (pathBeforeQ.endsWith(".m3u8") || pathBeforeQ.endsWith("master.txt"));
+
+    if (isPlaylistReq) {
+      const cachedPl = hlsPlaylistTextCache.get(targetUrl);
+      if (cachedPl && cachedPl.expiresAt > Date.now()) {
+        const buf = Buffer.from(cachedPl.text, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get(name: string) {
+              const n = name.toLowerCase();
+              if (n === "content-type") return "application/vnd.apple.mpegurl; charset=utf-8";
+              if (n === "content-length") return String(buf.byteLength);
+              return null;
+            }
+          },
+          text: async () => cachedPl.text,
+          arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+        };
+      }
+    }
+
     let parsed: URL;
     try {
       parsed = new URL(targetUrl);
@@ -552,6 +569,20 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
     const isSprint = hostLower.includes("sprintcdn") || hostLower.includes("owphbf") || hostLower.includes("r66nv9ed");
     if (!isSprint) {
       const res = await fetch(targetUrl, options);
+      if (isPlaylistReq && res.ok) {
+        const txt = await res.text();
+        if (txt.includes("#EXTM3U")) {
+          hlsPlaylistTextCache.set(targetUrl, { text: txt, expiresAt: Date.now() + 60000 });
+        }
+        const buf = Buffer.from(txt, "utf8");
+        return {
+          ok: true,
+          status: res.status,
+          headers: res.headers,
+          text: async () => txt,
+          arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+        };
+      }
       return {
         ok: res.ok,
         status: res.status,
@@ -582,74 +613,143 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       };
     }
 
-    for (const ip of candidateIps) {
-      try {
-        const responseData = await new Promise<{
-          status: number;
-          headers: Record<string, string | string[] | undefined>;
-          bodyBuf: Buffer;
-        }>((resolve, reject) => {
-          const req = https.request({
-            host: ip,
-            port: 443,
-            servername: parsed.hostname,
-            path: parsed.pathname + parsed.search,
-            method: options.method || "GET",
-            headers: {
-              "Host": parsed.hostname,
-              ...(options.headers || {})
-            },
-            timeout: 3500
-          }, (resp) => {
-            const chunks: Buffer[] = [];
-            resp.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-            resp.on("end", () => {
+    const fetchViaSingleIp = (ip: string, connectTimeoutMs: number = 2200, bodyTimeoutMs: number = 14000) =>
+      new Promise<{
+        ip: string;
+        status: number;
+        headers: Record<string, string | string[] | undefined>;
+        bodyBuf: Buffer;
+      }>((resolve, reject) => {
+        let settled = false;
+        const req = https.request({
+          host: ip,
+          port: 443,
+          servername: parsed.hostname,
+          path: parsed.pathname + parsed.search,
+          method: options.method || "GET",
+          headers: {
+            "Host": parsed.hostname,
+            ...(options.headers || {})
+          }
+        }, (resp) => {
+          clearTimeout(connectTimer);
+          const status = resp.statusCode || 200;
+          if (status >= 500) {
+            resp.destroy();
+            if (!settled) {
+              settled = true;
+              reject(new Error(`Upstream ${status} on ${ip}`));
+            }
+            return;
+          }
+          const bodyTimer = setTimeout(() => {
+            resp.destroy();
+            req.destroy();
+            if (!settled) {
+              settled = true;
+              reject(new Error(`Body timeout on ${ip}`));
+            }
+          }, bodyTimeoutMs);
+
+          const chunks: Buffer[] = [];
+          resp.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+          resp.on("end", () => {
+            clearTimeout(bodyTimer);
+            if (!settled) {
+              settled = true;
               resolve({
-                status: resp.statusCode || 200,
+                ip,
+                status,
                 headers: resp.headers,
                 bodyBuf: Buffer.concat(chunks)
               });
-            });
+            }
           });
-          req.on("timeout", () => {
-            req.destroy();
-            reject(new Error(`Timeout on ${ip}`));
+          resp.on("error", (err) => {
+            clearTimeout(bodyTimer);
+            if (!settled) {
+              settled = true;
+              reject(err);
+            }
           });
-          req.on("error", (e) => reject(e));
-          if (options.body) req.write(options.body);
-          req.end();
         });
-
-        sprintCdnWorkingIpCache.set(parsed.hostname, ip);
-        const headersHelper = {
-          get(name: string) {
-            const lower = name.toLowerCase();
-            const val = responseData.headers[lower];
-            if (Array.isArray(val)) return val.join(", ");
-            return typeof val === "string" ? val : null;
+        const connectTimer = setTimeout(() => {
+          req.destroy();
+          if (!settled) {
+            settled = true;
+            reject(new Error(`Timeout on ${ip}`));
           }
-        };
+        }, connectTimeoutMs);
+        req.on("error", (e) => {
+          clearTimeout(connectTimer);
+          if (!settled) {
+            settled = true;
+            reject(e);
+          }
+        });
+        if (options.body) req.write(options.body);
+        req.end();
+      });
 
-        return {
-          ok: responseData.status >= 200 && responseData.status < 300,
-          status: responseData.status,
-          headers: headersHelper,
-          text: async () => responseData.bodyBuf.toString("utf8"),
-          arrayBuffer: async () => responseData.bodyBuf.buffer.slice(responseData.bodyBuf.byteOffset, responseData.bodyBuf.byteOffset + responseData.bodyBuf.byteLength)
-        };
-      } catch (ipErr: any) {
-        // Try next IP
+    try {
+      let responseData: {
+        ip: string;
+        status: number;
+        headers: Record<string, string | string[] | undefined>;
+        bodyBuf: Buffer;
+      };
+
+      if (cached) {
+        try {
+          responseData = await fetchViaSingleIp(cached, 2200, isPlaylistReq ? 5000 : 14000);
+        } catch {
+          sprintCdnWorkingIpCache.delete(parsed.hostname);
+          const fallbackIps = candidateIps.filter((ip) => ip !== cached);
+          responseData = await Promise.any(
+            (fallbackIps.length > 0 ? fallbackIps : candidateIps).map((ip) =>
+              fetchViaSingleIp(ip, 2500, isPlaylistReq ? 5000 : 14000)
+            )
+          );
+        }
+      } else {
+        responseData = await Promise.any(
+          candidateIps.map((ip) => fetchViaSingleIp(ip, 2400, isPlaylistReq ? 5000 : 14000))
+        );
       }
-    }
 
-    const fallbackRes = await fetch(targetUrl, options);
-    return {
-      ok: fallbackRes.ok,
-      status: fallbackRes.status,
-      headers: fallbackRes.headers,
-      text: () => fallbackRes.text(),
-      arrayBuffer: () => fallbackRes.arrayBuffer()
-    };
+      sprintCdnWorkingIpCache.set(parsed.hostname, responseData.ip);
+      if (isPlaylistReq && responseData.status >= 200 && responseData.status < 300) {
+        const txt = responseData.bodyBuf.toString("utf8");
+        if (txt.includes("#EXTM3U")) {
+          hlsPlaylistTextCache.set(targetUrl, { text: txt, expiresAt: Date.now() + 60000 });
+        }
+      }
+
+      const headersHelper = {
+        get(name: string) {
+          const lower = name.toLowerCase();
+          const val = responseData.headers[lower];
+          if (Array.isArray(val)) return val.join(", ");
+          return typeof val === "string" ? val : null;
+        }
+      };
+
+      return {
+        ok: responseData.status >= 200 && responseData.status < 300,
+        status: responseData.status,
+        headers: headersHelper,
+        text: async () => responseData.bodyBuf.toString("utf8"),
+        arrayBuffer: async () => responseData.bodyBuf.buffer.slice(responseData.bodyBuf.byteOffset, responseData.bodyBuf.byteOffset + responseData.bodyBuf.byteLength)
+      };
+    } catch {
+      return {
+        ok: false,
+        status: 504,
+        headers: { get: () => null },
+        text: async () => "",
+        arrayBuffer: async () => new ArrayBuffer(0)
+      };
+    }
   }
 
   async function parseHlsManifestMetadata(
@@ -662,6 +762,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
   ): Promise<ExtractedStreamMetadata> {
     const cleanForcedQ = (forcedQuality || '').trim();
     const defaultSingleQ = cleanForcedQ || '1080p';
+    const isProviderSource = Boolean(originalSourceUrl && !originalSourceUrl.toLowerCase().includes('.m3u8'));
 
     try {
       let referer = customReferer || 'https://byseraguci.com/';
@@ -690,7 +791,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       if (!resp.ok) {
         return {
           qualities: [defaultSingleQ],
-          qualityLinks: { [defaultSingleQ]: m3u8Url },
+          qualityLinks: { [defaultSingleQ]: isProviderSource && originalSourceUrl ? originalSourceUrl : m3u8Url },
           downloadQualities: [],
           audioTracks: [],
           duration: durationSec || 0
@@ -822,7 +923,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
         try {
           const firstQ = qualities[0];
           const probeUrl = qualityLinks[firstQ];
-          const pResp = await fetch(probeUrl, {
+          const pResp = await resilientFetchSprintCdn(probeUrl, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               'Referer': referer,
@@ -865,7 +966,12 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       for (let idx = 0; idx < qualities.length; idx++) {
         const q = qualities[idx];
         const resolvedSubUrl = qualityLinks[q] || m3u8Url;
-        const assignedUrl = qualities.length === 1 && originalSourceUrl ? originalSourceUrl : resolvedSubUrl;
+        const assignedUrl = (isProviderSource || hasSeparateAudioRendition || cleanForcedQ || qualities.length === 1) && originalSourceUrl
+          ? originalSourceUrl
+          : resolvedSubUrl;
+        if (isProviderSource && originalSourceUrl) {
+          qualityLinks[q] = originalSourceUrl;
+        }
         let sizeMb = 0;
         let actualBps = bandwidthsByQuality[q] || 0;
 
@@ -877,7 +983,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
           sizeMb = Math.max(1, Math.round(estBytes / (1024 * 1024))) + separateAudioMb;
         } else if (!skipSubPlaylistProbe && resolvedSubUrl && resolvedSubUrl !== m3u8Url) {
           try {
-            const subR = await fetch(resolvedSubUrl, {
+            const subR = await resilientFetchSprintCdn(resolvedSubUrl, {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Referer': referer,
@@ -1528,6 +1634,224 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
     }
   }
 
+  // ============================================================================
+  // ⚡ DEDICATED VOE.SX / SERVER 1 BUILT-IN DIRECT STREAM EXTRACTOR
+  //    (Multi-hop JS redirect + ROT13 / Symbol-Strip / Base64 / Shift(-3) / Reverse / wc0)
+  // ============================================================================
+  const VOE_MIRROR_DOMAINS = [
+    "voe.sx", "voe.", "voe-network", "cloudwindow-route", "reputationsickler",
+    "turtledoveconsequent", "launchreliantcleaverriver", "fraudclatterflyingcar",
+    "321naturelikefur", "ralphysuccessfull", "yodelswart", "availedsmallest",
+    "graceaddresscommunity", "loriwithinfamily", "nathanfromsubject",
+    "jilliandescribecompany", "maxfinishseveral", "kristiesoundsimply",
+    "richardsignfish", "primaryclassalright", "alejandrorisk", "cindyeyefinal",
+    "dianaavoidthey"
+  ];
+
+  function isVoeOrMirrorUrl(rawUrl: string): boolean {
+    if (!rawUrl || typeof rawUrl !== "string") return false;
+    const lower = rawUrl.toLowerCase().trim();
+    return VOE_MIRROR_DOMAINS.some((d) => lower.includes(d));
+  }
+
+  function normalizeVoeEmbedUrl(rawUrl: string): string {
+    const trimmed = rawUrl.trim();
+    try {
+      const u = new URL(trimmed);
+      const segs = u.pathname.split("/").filter(Boolean);
+      if (segs.length === 1 && segs[0].length >= 6 && !segs[0].includes(".")) {
+        return `${u.protocol}//${u.host}/e/${segs[0]}`;
+      }
+    } catch {}
+    return trimmed;
+  }
+
+  function decodeVoeObfuscatedPayloadServer(raw: string): string | null {
+    try {
+      let rot13 = "";
+      for (let i = 0; i < raw.length; i++) {
+        const c = raw.charCodeAt(i);
+        if (c >= 97 && c <= 122) {
+          rot13 += String.fromCharCode(97 + ((c - 97 + 13) % 26));
+        } else if (c >= 65 && c <= 90) {
+          rot13 += String.fromCharCode(65 + ((c - 65 + 13) % 26));
+        } else {
+          rot13 += raw[i];
+        }
+      }
+
+      let cleaned = rot13;
+      const markers = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"];
+      for (const mk of markers) {
+        cleaned = cleaned.split(mk).join("");
+      }
+      cleaned = cleaned.split("_").join("");
+
+      const step3Str = Buffer.from(cleaned, "base64").toString("utf8");
+      let shifted = "";
+      for (let i = 0; i < step3Str.length; i++) {
+        shifted += String.fromCharCode(step3Str.charCodeAt(i) - 3);
+      }
+
+      const reversed = shifted.split("").reverse().join("");
+      const jsonStr = Buffer.from(reversed, "base64").toString("utf8");
+      const parsed = JSON.parse(jsonStr);
+      if (parsed && typeof parsed.source === "string" && parsed.source.includes(".m3u8")) {
+        return parsed.source.trim();
+      }
+      const m = jsonStr.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/i);
+      return m ? m[0].replace(/\\\//g, "/") : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractVoeM3u8FromHtmlServer(html: string, baseUrl: string): string | null {
+    if (!html) return null;
+
+    // 1. VOE obfuscated <script type="application/json">["..."]</script>
+    const scriptRegex = /<script[^>]+type=["']application\/json["'][^>]*>\s*\[?\s*["']([^"'\[\]]+)["']\s*\]?\s*<\/script>/gi;
+    let sMatch: RegExpExecArray | null;
+    while ((sMatch = scriptRegex.exec(html)) !== null) {
+      const rawPayload = sMatch[1];
+      if (rawPayload) {
+        const dec = decodeVoeObfuscatedPayloadServer(rawPayload);
+        if (dec) {
+          try {
+            return new URL(dec, baseUrl).toString();
+          } catch {
+            return dec;
+          }
+        }
+      }
+    }
+
+    // 2. VOE `let wc0 = '...'` or Base64 JSON config
+    const wc0Regex = /(?:let|var|const)\s+(?:wc0|[a-zA-Z0-9_]{2,8})\s*=\s*['"]([A-Za-z0-9+/=]{40,})['"]/g;
+    let wMatch: RegExpExecArray | null;
+    while ((wMatch = wc0Regex.exec(html)) !== null) {
+      const b64 = wMatch[1];
+      try {
+        const decoded = Buffer.from(b64, "base64").toString("utf8").replace(/\\\//g, "/");
+        const m1 = decoded.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/i);
+        if (m1) return m1[0];
+        const rev = decoded.split("").reverse().join("");
+        const m2 = rev.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/i);
+        if (m2) return m2[0];
+      } catch {}
+    }
+
+    // 3. Base64 encoded 'hls': '...' or atob('...')
+    const b64Patterns = [
+      /['"]hls['"]\s*:\s*['"]([A-Za-z0-9+/=]{24,})['"]/g,
+      /atob\(\s*['"]([A-Za-z0-9+/=]{24,})['"]\s*\)/g
+    ];
+    for (const pat of b64Patterns) {
+      let bMatch: RegExpExecArray | null;
+      while ((bMatch = pat.exec(html)) !== null) {
+        try {
+          const decoded = Buffer.from(bMatch[1], "base64").toString("utf8").trim().replace(/\\\//g, "/");
+          if (decoded.includes(".m3u8")) {
+            const m = decoded.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/i);
+            if (m) return m[0];
+            if (decoded.startsWith("http")) return decoded;
+          }
+        } catch {}
+      }
+    }
+
+    // 4. Direct / escaped .m3u8 links in HTML
+    const unescaped = html.replace(/\\\//g, "/");
+    const directMatches = unescaped.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/gi);
+    if (directMatches && directMatches.length > 0) {
+      const valid = directMatches.filter((u) => !u.includes("jwpltx") && !u.includes("ping.gif"));
+      return valid.find((u) => u.includes("master")) || valid[0] || null;
+    }
+
+    return null;
+  }
+
+  async function extractVoeDirectStream(sourceUrl: string): Promise<{
+    ok: boolean;
+    m3u8Url?: string;
+    headers?: Record<string, string>;
+    error?: string;
+  }> {
+    const ua = defaultByseUa;
+    try {
+      let currentUrl = normalizeVoeEmbedUrl(sourceUrl);
+      let refererUrl = (() => {
+        try {
+          return `${new URL(currentUrl).origin}/`;
+        } catch {
+          return "https://voe.sx/";
+        }
+      })();
+
+      for (let hop = 0; hop < 5; hop++) {
+        const resp = await fetch(currentUrl, {
+          headers: {
+            "User-Agent": ua,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": refererUrl
+          },
+          redirect: "follow",
+          signal: AbortSignal.timeout(7000)
+        });
+        const finalHopUrl = resp.url || currentUrl;
+        const html = await resp.text();
+        if (!html) break;
+
+        currentUrl = finalHopUrl;
+
+        const extracted = extractVoeM3u8FromHtmlServer(html, currentUrl);
+        if (extracted) {
+          let pageOrigin = "https://voe.sx";
+          try {
+            pageOrigin = new URL(currentUrl).origin;
+          } catch {}
+          return {
+            ok: true,
+            m3u8Url: extracted,
+            headers: {
+              "Referer": currentUrl,
+              "Origin": pageOrigin,
+              "User-Agent": ua
+            }
+          };
+        }
+
+        // Check for VOE JS redirect (window.location.href = 'https://...' or window.location.replace('...'))
+        const jsRedirectMatch =
+          html.match(/window\.location\.(?:href|replace)\s*(?:=|\()\s*['"](https?:\/\/[^'"]+)['"]/i) ||
+          html.match(/location\.href\s*=\s*['"](https?:\/\/[^'"]+)['"]/i);
+        if (jsRedirectMatch && jsRedirectMatch[1] && jsRedirectMatch[1] !== currentUrl) {
+          refererUrl = currentUrl;
+          currentUrl = normalizeVoeEmbedUrl(jsRedirectMatch[1].trim());
+          continue;
+        }
+
+        // Check for nested player iframe
+        const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+        if (iframeMatch && iframeMatch[1]) {
+          const nextIframe = new URL(iframeMatch[1], currentUrl).toString();
+          if (nextIframe !== currentUrl && !nextIframe.includes("doubleclick") && !nextIframe.includes("popads")) {
+            refererUrl = currentUrl;
+            currentUrl = nextIframe;
+            continue;
+          }
+        }
+
+        break;
+      }
+
+      return { ok: false, error: "Could not extract VOE stream directly" };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || "VOE direct extraction error" };
+    }
+  }
+
   const handleExtractStream = async (req: any, res: any) => {
     try {
       const sourceUrl = (req.body?.url || req.query?.url) as string;
@@ -1641,14 +1965,15 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
             if ((!streamMeta.duration || streamMeta.duration <= 0) && realSizeBytes > 0 && realBitrateKbps > 0) {
               streamMeta.duration = Math.round((realSizeBytes * 8) / (realBitrateKbps * 1000));
             }
+            const h = fmResult.byseMeta.height || 0;
+            const qLabel = forcedQuality || (h >= 1000 ? "1080p" : h >= 700 ? "720p" : h >= 450 ? "480p" : "1080p");
+            const bw = realBitrateKbps > 0 ? realBitrateKbps * 1000 : 2200000;
+            const dur = streamMeta.duration || requestedDuration || 1440;
+            const estMb = realSizeBytes > 0
+              ? Math.max(1, Math.round(realSizeBytes / (1024 * 1024)))
+              : Math.max(15, Math.round((bw * dur) / (8 * 1024 * 1024)));
+
             if (!streamMeta.downloadQualities || streamMeta.downloadQualities.length === 0) {
-              const h = fmResult.byseMeta.height || 0;
-              const qLabel = forcedQuality || (h >= 1000 ? "1080p" : h >= 700 ? "720p" : h >= 450 ? "480p" : "1080p");
-              const bw = realBitrateKbps > 0 ? realBitrateKbps * 1000 : 2200000;
-              const dur = streamMeta.duration || requestedDuration || 1440;
-              const estMb = realSizeBytes > 0
-                ? Math.max(1, Math.round(realSizeBytes / (1024 * 1024)))
-                : Math.max(15, Math.round((bw * dur) / (8 * 1024 * 1024)));
               if (!streamMeta.qualities || streamMeta.qualities.length === 0) {
                 streamMeta.qualities = [qLabel];
               }
@@ -1661,6 +1986,11 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
                   bandwidth: bw
                 }
               ];
+            } else {
+              streamMeta.downloadQualities = streamMeta.downloadQualities.map((dq: any) => ({
+                ...dq,
+                sizeMb: dq.sizeMb && dq.sizeMb > 0 ? dq.sizeMb : estMb
+              }));
             }
           }
 
@@ -1673,34 +2003,29 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
           // Wrap master m3u8 in proxy for Web Browsers, while preserving rawM3u8Url for Native Kotlin APK
           const proxiedMaster = `${serverOrigin}/proxy/m3u8?url=${encodeURIComponent(fmResult.m3u8Url)}${refParam}`;
 
-          const proxiedQualityLinks: Record<string, string> = {};
-          if (streamMeta.qualityLinks && typeof streamMeta.qualityLinks === 'object') {
-            for (const [q, link] of Object.entries(streamMeta.qualityLinks)) {
-              if (link && (link.includes('.m3u8') || link.includes('m3u8') || link.includes('master'))) {
-                proxiedQualityLinks[q] = `${serverOrigin}/proxy/m3u8?url=${encodeURIComponent(link)}${refParam}`;
-              } else {
-                proxiedQualityLinks[q] = proxiedMaster;
-              }
-            }
-          }
-          if (Object.keys(proxiedQualityLinks).length === 0) {
-            proxiedQualityLinks[forcedQuality || '1080p'] = proxiedMaster;
+          // Always preserve the permanent provider URL (trimmedUrl) in qualityLinks so Firestore never saves expiring CDN tokens
+          const permanentQualityLinks: Record<string, string> = {};
+          const qualList = (streamMeta.qualities && streamMeta.qualities.length > 0)
+            ? streamMeta.qualities
+            : [forcedQuality || '1080p'];
+          for (const q of qualList) {
+            permanentQualityLinks[q] = trimmedUrl;
           }
 
           const proxiedDownloadQualities = (streamMeta.downloadQualities || []).map((dq: any) => ({
             ...dq,
-            url: forcedQuality ? trimmedUrl : (dq.url || trimmedUrl)
+            url: trimmedUrl
           }));
 
           streamExtractionCache.set(cacheKey, {
             m3u8Url: proxiedMaster,
             rawM3u8Url: fmResult.m3u8Url,
-            rawQualityLinks: streamMeta.qualityLinks,
+            rawQualityLinks: permanentQualityLinks,
             headers: fmResult.headers,
             expiresAt,
             cachedAt: now,
-            qualities: streamMeta.qualities,
-            qualityLinks: proxiedQualityLinks,
+            qualities: qualList,
+            qualityLinks: permanentQualityLinks,
             downloadQualities: proxiedDownloadQualities,
             audioTracks: streamMeta.audioTracks,
             duration: streamMeta.duration
@@ -1710,15 +2035,92 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
             ok: true,
             m3u8Url: proxiedMaster,
             rawM3u8Url: fmResult.m3u8Url,
-            qualities: streamMeta.qualities,
-            qualityLinks: proxiedQualityLinks,
-            rawQualityLinks: streamMeta.qualityLinks,
+            qualities: qualList,
+            qualityLinks: permanentQualityLinks,
+            rawQualityLinks: permanentQualityLinks,
             downloadQualities: proxiedDownloadQualities,
             audioTracks: streamMeta.audioTracks,
             duration: streamMeta.duration,
             durationFormatted: Math.floor(streamMeta.duration / 60) + ":" + (streamMeta.duration % 60).toString().padStart(2, '0'),
             headers: fmResult.headers,
             provider: "FILEMOON",
+            cached: false,
+            expiresAt,
+            remainingSeconds: Math.round(ttlMs / 1000)
+          });
+          return;
+        }
+      }
+
+      // ====================================================================
+      // DEDICATED VOE.SX / SERVER 1 BUILT-IN DIRECT FAST PATH (< 400ms, No HF Space needed!)
+      // ====================================================================
+      if (!isFilemoonOrByseUrl(trimmedUrl)) {
+        const voeResult = await extractVoeDirectStream(trimmedUrl);
+        if (voeResult.ok && voeResult.m3u8Url) {
+          const ttlMs = 170 * 60 * 1000;
+          const expiresAt = now + ttlMs;
+          const customRef = voeResult.headers?.["Referer"] || "https://voe.sx/";
+          const streamMeta = await parseHlsManifestMetadata(
+            voeResult.m3u8Url,
+            requestedDuration,
+            customRef,
+            skipSubPlaylistProbe,
+            forcedQuality || undefined,
+            trimmedUrl
+          );
+
+          const host = req.get("host") || "localhost:3000";
+          const reqOrigin = String(req.headers.origin || "");
+          const isExternalCrossOrigin = Boolean(reqOrigin && !reqOrigin.includes(host) && host.includes("hf.space"));
+          const serverOrigin = isExternalCrossOrigin ? `https://${host}` : "";
+          const refParam = customRef ? `&referer=${encodeURIComponent(customRef)}` : "";
+
+          // Wrap master m3u8 in /proxy/m3u8 for Web Browsers, while preserving rawM3u8Url for Native Kotlin APK
+          const proxiedMaster = `${serverOrigin}/proxy/m3u8?url=${encodeURIComponent(voeResult.m3u8Url)}${refParam}`;
+
+          // Always preserve the permanent provider URL (trimmedUrl) in qualityLinks so Firestore never saves expiring CDN tokens
+          const permanentQualityLinks: Record<string, string> = {};
+          const qualList = (streamMeta.qualities && streamMeta.qualities.length > 0)
+            ? streamMeta.qualities
+            : [forcedQuality || "1080p"];
+          for (const q of qualList) {
+            permanentQualityLinks[q] = trimmedUrl;
+          }
+
+          const proxiedDownloadQualities = (streamMeta.downloadQualities || []).map((dq: any) => ({
+            ...dq,
+            url: trimmedUrl
+          }));
+
+          streamExtractionCache.set(cacheKey, {
+            m3u8Url: proxiedMaster,
+            rawM3u8Url: voeResult.m3u8Url,
+            rawQualityLinks: permanentQualityLinks,
+            headers: voeResult.headers,
+            expiresAt,
+            cachedAt: now,
+            qualities: qualList,
+            qualityLinks: permanentQualityLinks,
+            downloadQualities: proxiedDownloadQualities,
+            audioTracks: streamMeta.audioTracks,
+            duration: streamMeta.duration
+          } as any);
+
+          res.json({
+            ok: true,
+            m3u8Url: proxiedMaster,
+            rawM3u8Url: voeResult.m3u8Url,
+            qualities: qualList,
+            qualityLinks: permanentQualityLinks,
+            rawQualityLinks: permanentQualityLinks,
+            downloadQualities: proxiedDownloadQualities,
+            audioTracks: streamMeta.audioTracks,
+            duration: streamMeta.duration,
+            durationFormatted: Math.floor(streamMeta.duration / 60) + ":" + (streamMeta.duration % 60).toString().padStart(2, "0"),
+            rawVoeUrl: voeResult.m3u8Url,
+            headers: voeResult.headers,
+            provider: "VOE",
             cached: false,
             expiresAt,
             remainingSeconds: Math.round(ttlMs / 1000)
@@ -1741,26 +2143,19 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
 
       // Helper to compute embed URL for known hosters like VOE / Filemoon
       const getFallbackEmbed = (urlStr: string) => {
-        const lower = urlStr.toLowerCase();
         if (isFilemoonOrByseUrl(urlStr)) {
           return urlStr.replace(/\/d\//i, "/e/");
         }
-        if (lower.includes("voe.") || lower.includes("voe.sx")) {
-          if (urlStr.includes("/e/")) return urlStr;
-          const match = urlStr.match(/https?:\/\/[^\/]+\/([a-zA-Z0-9_-]+)/);
-          if (match && match[1]) {
-            const host = urlStr.split("/")[2];
-            return `https://${host}/e/${match[1]}`;
-          }
-          return urlStr;
+        if (isVoeOrMirrorUrl(urlStr)) {
+          return normalizeVoeEmbedUrl(urlStr);
         }
         return "";
       };
 
       const fallbackEmbedUrl = getFallbackEmbed(trimmedUrl);
 
-      // 12s on Vercel to stay within serverless function limits; 60s (1 min) elsewhere for slow extractions
-      const timeoutMs = isVercelEnv ? 12000 : 60000;
+      // 8s timeout for external fallback service so it never hangs the request if sleeping
+      const timeoutMs = isVercelEnv ? 8000 : 12000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1787,16 +2182,16 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       }
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errText = await response.text();
+      const rawBodyText = await response.text();
+      if (response.status !== 200 || rawBodyText.trimStart().startsWith("<")) {
         let errMsg = `Extractor service error (${response.status})`;
         try {
-          const parsed = JSON.parse(errText);
+          const parsed = JSON.parse(rawBodyText);
           if (parsed.error || parsed.message) {
             errMsg = parsed.error || parsed.message;
           }
         } catch {
-          if (errText && errText.length < 200) errMsg = errText;
+          if (rawBodyText && rawBodyText.length < 200 && !rawBodyText.includes("<")) errMsg = rawBodyText;
         }
         res.status(200).json({
           ok: false,
@@ -1808,7 +2203,12 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
         return;
       }
 
-      const data = await response.json();
+      let data: any = null;
+      try {
+        data = JSON.parse(rawBodyText);
+      } catch {
+        data = null;
+      }
       const resolvedM3u8 = data?.m3u8Url || data?.url || data?.streamUrl || data?.rawVoeUrl;
 
       if (!data || !resolvedM3u8) {
@@ -1930,36 +2330,19 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
             streamUrl = fmRes.m3u8Url;
           }
         }
-      } else if (
-        streamUrl.includes("voe.sx") ||
-        streamUrl.includes("voe.") ||
-        streamUrl.includes("cloudwindow-route") ||
-        streamUrl.includes("reputationsickler") ||
-        streamUrl.includes("turtledoveconsequent")
-      ) {
+      } else if (isVoeOrMirrorUrl(streamUrl)) {
         const cached = streamExtractionCache.get(streamUrl);
-        if (cached && cached.m3u8Url) {
-          streamUrl = cached.m3u8Url;
-          if (quality && cached.qualityLinks && cached.qualityLinks[quality]) {
-            streamUrl = cached.qualityLinks[quality];
+        if (cached && ((cached as any).rawM3u8Url || cached.m3u8Url)) {
+          streamUrl = (cached as any).rawM3u8Url || cached.m3u8Url;
+          const rawQLinks = (cached as any).rawQualityLinks || cached.qualityLinks;
+          if (quality && rawQLinks && rawQLinks[quality]) {
+            streamUrl = rawQLinks[quality];
           }
         } else {
-          const extractorKey = (process.env.VOE_EXTRACTOR_KEY || "MaxPlayMasterPass777!").trim();
-          let rawBaseUrl = (process.env.VOE_EXTRACTOR_URL || "").trim();
-          if (!rawBaseUrl || rawBaseUrl.includes("ltargeturl") || rawBaseUrl.includes("voe.sx")) {
-            rawBaseUrl = "https://nawazkhan001-mw-hub-master.hf.space/api/extract";
+          const voeRes = await extractVoeDirectStream(streamUrl);
+          if (voeRes.ok && voeRes.m3u8Url) {
+            streamUrl = voeRes.m3u8Url;
           }
-          if (rawBaseUrl.includes("?")) rawBaseUrl = rawBaseUrl.split("?")[0].trim();
-          const apiUrl = `${rawBaseUrl}?url=${encodeURIComponent(streamUrl)}&key=${encodeURIComponent(extractorKey)}`;
-          try {
-            const resp = await fetch(apiUrl);
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data && (data.m3u8Url || data.url)) {
-                streamUrl = data.m3u8Url || data.url;
-              }
-            }
-          } catch (_) {}
         }
       }
 
@@ -2109,8 +2492,11 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       if (!referer) {
         try {
           const u = new URL(targetUrl);
-          if (u.hostname.includes("sprintcdn") || u.hostname.includes("owphbf") || u.hostname.includes("r66nv9ed") || u.hostname.includes("filemoon") || u.hostname.includes("byse") || u.hostname.includes("n1mwq")) {
+          const h = u.hostname.toLowerCase();
+          if (h.includes("sprintcdn") || h.includes("owphbf") || h.includes("r66nv9ed") || h.includes("filemoon") || h.includes("byse") || h.includes("n1mwq")) {
             referer = "https://byseraguci.com/";
+          } else if (h.includes("voe")) {
+            referer = "https://voe.sx/";
           } else {
             referer = `${u.origin}/`;
           }
@@ -2141,6 +2527,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       const lines = text.split("\n");
       const rewrittenLines: string[] = [];
       const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : "";
+      let expectVariantStreamUrl = false;
 
       for (let i = 0; i < lines.length; i++) {
         let line = lines[i].trim();
@@ -2150,6 +2537,9 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
         }
 
         if (line.startsWith("#")) {
+          if (line.startsWith("#EXT-X-STREAM-INF")) {
+            expectVariantStreamUrl = true;
+          }
           // Check for #EXT-X-MEDIA:TYPE=AUDIO/SUBTITLES/...URI="..."
           if (line.startsWith("#EXT-X-MEDIA") && line.includes('URI="')) {
             line = line.replace(/URI="([^"]+)"/, (_match, uri) => {
@@ -2157,8 +2547,8 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
               return `URI="${serverOrigin}/proxy/m3u8?url=${encodeURIComponent(full)}${refParam}"`;
             });
           }
-          // Check for #EXT-X-KEY:METHOD=...,URI="..."
-          else if (line.startsWith("#EXT-X-KEY") && line.includes('URI="')) {
+          // Check for #EXT-X-KEY:METHOD=...,URI="..." or #EXT-X-MAP:URI="..."
+          else if ((line.startsWith("#EXT-X-KEY") || line.startsWith("#EXT-X-MAP")) && line.includes('URI="')) {
             line = line.replace(/URI="([^"]+)"/, (_match, uri) => {
               const full = joinHlsUrl(uri, targetUrl);
               return `URI="${serverOrigin}/proxy/ts?url=${encodeURIComponent(full)}${refParam}"`;
@@ -2174,8 +2564,18 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
           rewrittenLines.push(line);
         } else {
           // Line is a URL (variant playlist or media segment)
+          // IMPORTANT: Never check lowerFull.includes("urlset") here because VOE & Filemoon .ts segments
+          // reside inside a "...,.urlset/seg-1-v1-a1.ts" parent folder! Only route to /proxy/m3u8 when
+          // following #EXT-X-STREAM-INF or when the pathname itself ends in .m3u8 or master.txt.
           const fullUrl = joinHlsUrl(line, targetUrl);
-          if (fullUrl.includes(".m3u8") || fullUrl.includes("m3u8")) {
+          const lowerFull = fullUrl.toLowerCase();
+          const pathBeforeQuery = lowerFull.split("?")[0];
+          if (
+            expectVariantStreamUrl ||
+            pathBeforeQuery.endsWith(".m3u8") ||
+            pathBeforeQuery.endsWith("master.txt")
+          ) {
+            expectVariantStreamUrl = false;
             rewrittenLines.push(`${serverOrigin}/proxy/m3u8?url=${encodeURIComponent(fullUrl)}${refParam}`);
           } else {
             rewrittenLines.push(`${serverOrigin}/proxy/ts?url=${encodeURIComponent(fullUrl)}${refParam}`);
@@ -2204,7 +2604,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
     res.sendStatus(204);
   });
 
-  // Dedicated TS Segment Proxy with Range Header & Streaming Support
+  // Dedicated TS Segment Proxy with Range Header & Resilient SprintCDN IP Failover
   const handleProxyTs = async (req: any, res: any) => {
     try {
       const targetUrl = (req.query.url as string || "").trim();
@@ -2214,17 +2614,22 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       }
 
       let referer = (req.query.referer as string || "").trim();
-      if (!referer) {
-        try {
-          const u = new URL(targetUrl);
-          if (u.hostname.includes("sprintcdn") || u.hostname.includes("owphbf") || u.hostname.includes("r66nv9ed") || u.hostname.includes("filemoon") || u.hostname.includes("byse") || u.hostname.includes("n1mwq")) {
+      let isSprintHost = false;
+      try {
+        const u = new URL(targetUrl);
+        const h = u.hostname.toLowerCase();
+        isSprintHost = h.includes("sprintcdn") || h.includes("owphbf") || h.includes("r66nv9ed");
+        if (!referer) {
+          if (isSprintHost || h.includes("filemoon") || h.includes("byse") || h.includes("n1mwq")) {
             referer = "https://byseraguci.com/";
+          } else if (h.includes("voe")) {
+            referer = "https://voe.sx/";
           } else {
             referer = `${u.origin}/`;
           }
-        } catch {
-          referer = "https://byseraguci.com/";
         }
+      } catch {
+        if (!referer) referer = "https://byseraguci.com/";
       }
       let originHeader = "";
       try {
@@ -2242,21 +2647,41 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
         headers["Range"] = req.headers.range;
       }
 
-      const upstream = await fetch(targetUrl, {
-        headers,
-        signal: AbortSignal.timeout(30000)
-      });
-
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "*");
       res.setHeader("Accept-Ranges", "bytes");
 
-      if (upstream.headers.get("content-type")) {
-        res.setHeader("Content-Type", upstream.headers.get("content-type")!);
-      } else {
-        res.setHeader("Content-Type", "video/mp2t");
+      const normalizeSegmentMime = (rawCt: string | null): string => {
+        if (!rawCt) return "video/mp2t";
+        const lowerCt = rawCt.toLowerCase();
+        // Disguised HLS segments on SprintCDN / VOE / Filemoon often return image/jpeg, image/png, text/html, or text/plain
+        if (lowerCt.startsWith("image/") || lowerCt.startsWith("text/html") || lowerCt.startsWith("text/plain")) {
+          return "video/mp2t";
+        }
+        return rawCt;
+      };
+
+      if (isSprintHost) {
+        const sprintRes = await resilientFetchSprintCdn(targetUrl, { headers });
+        res.setHeader("Content-Type", normalizeSegmentMime(sprintRes.headers.get("content-type")));
+        if (sprintRes.headers.get("content-length")) {
+          res.setHeader("Content-Length", sprintRes.headers.get("content-length")!);
+        }
+        if (sprintRes.headers.get("content-range")) {
+          res.setHeader("Content-Range", sprintRes.headers.get("content-range")!);
+        }
+        const arrayBuf = await sprintRes.arrayBuffer();
+        res.status(sprintRes.status).send(Buffer.from(arrayBuf));
+        return;
       }
+
+      const upstream = await fetch(targetUrl, {
+        headers,
+        signal: AbortSignal.timeout(20000)
+      });
+
+      res.setHeader("Content-Type", normalizeSegmentMime(upstream.headers.get("content-type")));
       if (upstream.headers.get("content-length")) {
         res.setHeader("Content-Length", upstream.headers.get("content-length")!);
       }
@@ -2310,8 +2735,11 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
       if (!referer) {
         try {
           const u = new URL(targetUrl);
-          if (u.hostname.includes("sprintcdn") || u.hostname.includes("owphbf") || u.hostname.includes("r66nv9ed") || u.hostname.includes("filemoon") || u.hostname.includes("byse") || u.hostname.includes("n1mwq")) {
+          const h = u.hostname.toLowerCase();
+          if (h.includes("sprintcdn") || h.includes("owphbf") || h.includes("r66nv9ed") || h.includes("filemoon") || h.includes("byse") || h.includes("n1mwq")) {
             referer = "https://byseraguci.com/";
+          } else if (h.includes("voe")) {
+            referer = "https://voe.sx/";
           } else {
             referer = `${u.origin}/`;
           }
@@ -2324,7 +2752,7 @@ Always respond strictly with a valid JSON object matching this schema (do NOT wr
         originHeader = new URL(referer).origin;
       } catch {}
 
-      const upstream = await fetch(targetUrl, {
+      const upstream = await resilientFetchSprintCdn(targetUrl, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
           "Referer": referer,

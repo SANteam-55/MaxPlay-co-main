@@ -33,7 +33,7 @@ interface ClientCachedStream {
   meta?: CachedStreamMetadata;
 }
 
-const CACHE_PREFIX = "maxplay_hls_stream_v3_";
+const CACHE_PREFIX = "maxplay_hls_stream_v2_";
 
 export class SmartStreamService {
   /**
@@ -190,6 +190,7 @@ export class SmartStreamService {
       if (
         trimmed.includes("nawazkhan001-mw-hub-master.hf.space") ||
         trimmed.includes("/proxy/ts?url=") ||
+        trimmed.includes("/api/stream-proxy?url=") ||
         (isKotlinApp && trimmed.includes("/proxy/m3u8?url="))
       ) {
         const m = trimmed.match(/[?&]url=([^&#]+)/i);
@@ -267,14 +268,36 @@ export class SmartStreamService {
       const data: ClientCachedStream = JSON.parse(raw);
       const now = Date.now();
 
-      // In Kotlin native app, never reuse old server-proxied (/proxy/m3u8) URLs; always use direct .m3u8
-      if (
-        NativeBridgeService.isRunningInKotlinApp() &&
-        data?.m3u8Url &&
-        data.m3u8Url.includes("/proxy/m3u8")
-      ) {
-        this.clearClientCache(cleanUrl);
-        return null;
+      const isKotlinApp = NativeBridgeService.isRunningInKotlinApp();
+
+      // In Kotlin native app, always use direct rawM3u8Url instead of server-proxied (/proxy/m3u8) URLs
+      if (isKotlinApp && data?.m3u8Url && data.m3u8Url.includes("/proxy/m3u8")) {
+        if (data.meta?.rawM3u8Url && !data.meta.rawM3u8Url.includes("/proxy/m3u8")) {
+          data.m3u8Url = data.meta.rawM3u8Url;
+        } else {
+          const unwrapped = this.sanitizeStreamUrl(data.m3u8Url);
+          if (unwrapped && !unwrapped.includes("/proxy/m3u8")) {
+            data.m3u8Url = unwrapped;
+          } else {
+            this.clearClientCache(cleanUrl);
+            return null;
+          }
+        }
+      }
+
+      // In Web Browser, ensure SprintCDN / Byse / Filemoon streams are wrapped in /proxy/m3u8
+      if (!isKotlinApp && data?.m3u8Url && !data.m3u8Url.includes("/proxy/m3u8")) {
+        const lowerM3u8 = data.m3u8Url.toLowerCase();
+        if (
+          lowerM3u8.includes("sprintcdn") ||
+          lowerM3u8.includes("owphbf") ||
+          lowerM3u8.includes("r66nv9ed") ||
+          lowerM3u8.includes("byse") ||
+          lowerM3u8.includes("filemoon")
+        ) {
+          const ref = data.meta?.referer || this.resolveEmbedReferer(cleanUrl) || "https://byseraguci.com/";
+          data.m3u8Url = `/proxy/m3u8?url=${encodeURIComponent(data.m3u8Url)}&referer=${encodeURIComponent(ref)}`;
+        }
       }
 
       // Ensure at least 5 minutes buffer before expiry
@@ -1043,29 +1066,53 @@ export class SmartStreamService {
       }
     }
 
-    // 1.2 Fallback Client-Side Byse / Filemoon API Extraction in Kotlin APK
-    if (isKotlinApp && isByseOrFilemoon) {
-      try {
-        const clientByse = await this.extractByseClientSide(trimmed);
-        if (clientByse.ok && clientByse.m3u8Url) {
-          const ttlMs = 170 * 60 * 1000;
-          const expiresAt = Date.now() + ttlMs;
-          const chosenUrl = clientByse.m3u8Url;
-          const meta: CachedStreamMetadata = {
-            ...(clientByse.meta || {}),
-            rawM3u8Url: clientByse.m3u8Url,
-          };
-          this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
-          this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
-          return {
-            streamUrl: chosenUrl,
-            isExtracted: true,
-            cached: false,
-            isEmbed: false,
-            expiresAt,
-          };
-        }
-      } catch {}
+    // 1.2 Fallback Client-Side Direct Extraction in Kotlin APK (Byse / Filemoon / VOE)
+    if (isKotlinApp) {
+      if (isByseOrFilemoon) {
+        try {
+          const clientByse = await this.extractByseClientSide(trimmed);
+          if (clientByse.ok && clientByse.m3u8Url) {
+            const ttlMs = 170 * 60 * 1000;
+            const expiresAt = Date.now() + ttlMs;
+            const chosenUrl = clientByse.m3u8Url;
+            const meta: CachedStreamMetadata = {
+              ...(clientByse.meta || {}),
+              rawM3u8Url: clientByse.m3u8Url,
+            };
+            this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
+            this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
+            return {
+              streamUrl: chosenUrl,
+              isExtracted: true,
+              cached: false,
+              isEmbed: false,
+              expiresAt,
+            };
+          }
+        } catch {}
+      } else {
+        try {
+          const clientVoe = await this.extractVoeClientSide(trimmed);
+          if (clientVoe.ok && clientVoe.m3u8Url) {
+            const ttlMs = 170 * 60 * 1000;
+            const expiresAt = Date.now() + ttlMs;
+            const chosenUrl = clientVoe.m3u8Url;
+            const meta: CachedStreamMetadata = {
+              ...(clientVoe.meta || {}),
+              rawM3u8Url: clientVoe.m3u8Url,
+            };
+            this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
+            this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
+            return {
+              streamUrl: chosenUrl,
+              isExtracted: true,
+              cached: false,
+              isEmbed: false,
+              expiresAt,
+            };
+          }
+        } catch {}
+      }
     }
 
     // 2. Call backend proxy endpoint
@@ -1194,6 +1241,33 @@ export class SmartStreamService {
       }
     }
 
+    // 3.6 If backend proxy failed or timed out on VOE / Server 1, try client-side VOE extractor
+    if (!isByseOrFilemoon) {
+      const clientVoe = await this.extractVoeClientSide(trimmed);
+      if (clientVoe.ok && clientVoe.m3u8Url) {
+        const ttlMs = 170 * 60 * 1000;
+        const expiresAt = Date.now() + ttlMs;
+        const refUrl = clientVoe.meta?.referer || "https://voe.sx/";
+        const chosenUrl = isKotlinApp
+          ? clientVoe.m3u8Url
+          : `/proxy/m3u8?url=${encodeURIComponent(clientVoe.m3u8Url)}&referer=${encodeURIComponent(refUrl)}`;
+        const meta: CachedStreamMetadata = {
+          ...(clientVoe.meta || {}),
+          rawM3u8Url: clientVoe.m3u8Url,
+          proxiedM3u8Url: chosenUrl,
+        };
+        this.setClientCache(trimmed, chosenUrl, expiresAt, meta);
+        this.setClientCache(chosenUrl, chosenUrl, expiresAt, meta);
+        return {
+          streamUrl: chosenUrl,
+          isExtracted: true,
+          cached: false,
+          isEmbed: false,
+          expiresAt,
+        };
+      }
+    }
+
     // 4. Fallback Tier 2: Check for direct embed iframe URL (e.g. voe.sx/e/ID)
     const embedFallback = SmartStreamService.getEmbedUrl(trimmed);
     if (embedFallback) {
@@ -1213,6 +1287,132 @@ export class SmartStreamService {
       cached: false,
       isEmbed: false
     };
+  }
+
+  /**
+   * Client-side VOE.sx Direct Extractor via /api/proxy (works in both Kotlin APK and Web Browsers).
+   * Follows JS redirects and decodes VOE's ROT13 + symbol-strip + Base64 + shift(-3) + reverse + Base64 payload.
+   */
+  public static async extractVoeClientSide(
+    sourceUrl: string
+  ): Promise<{
+    ok: boolean;
+    m3u8Url?: string;
+    meta?: CachedStreamMetadata;
+  }> {
+    try {
+      let currentUrl = SmartStreamService.getEmbedUrl(sourceUrl) || sourceUrl.trim();
+      let refererUrl = "https://voe.sx/";
+      try {
+        refererUrl = `${new URL(currentUrl).origin}/`;
+      } catch {}
+
+      const decodeVoePayload = (raw: string): string | null => {
+        try {
+          let rot13 = "";
+          for (let i = 0; i < raw.length; i++) {
+            const c = raw.charCodeAt(i);
+            if (c >= 97 && c <= 122) rot13 += String.fromCharCode(97 + ((c - 97 + 13) % 26));
+            else if (c >= 65 && c <= 90) rot13 += String.fromCharCode(65 + ((c - 65 + 13) % 26));
+            else rot13 += raw[i];
+          }
+          let cleaned = rot13;
+          for (const mk of ["@$", "^^", "~@", "%?", "*~", "!!", "#&", "_"]) {
+            cleaned = cleaned.split(mk).join("");
+          }
+          const step3Str = atob(cleaned);
+          let shifted = "";
+          for (let i = 0; i < step3Str.length; i++) {
+            shifted += String.fromCharCode(step3Str.charCodeAt(i) - 3);
+          }
+          const reversed = shifted.split("").reverse().join("");
+          const jsonStr = atob(reversed);
+          const parsed = JSON.parse(jsonStr);
+          if (parsed && typeof parsed.source === "string" && parsed.source.includes(".m3u8")) {
+            return parsed.source.trim();
+          }
+          const m = jsonStr.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/i);
+          return m ? m[0].replace(/\\\//g, "/") : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const isKotlinApp = NativeBridgeService.isRunningInKotlinApp();
+      for (let hop = 0; hop < 4; hop++) {
+        let html = "";
+        if (isKotlinApp) {
+          html = await NativeBridgeService.fetchTextCorsFree(currentUrl, { Referer: refererUrl }).catch(() => "");
+        }
+        if (!html) {
+          const proxyUrl = `/api/proxy?url=${encodeURIComponent(currentUrl)}&referer=${encodeURIComponent(refererUrl)}`;
+          const resp = await fetch(proxyUrl).catch(() => null);
+          if (resp && resp.ok) {
+            html = await resp.text().catch(() => "");
+          }
+        }
+        if (!html) break;
+
+        // 1. Obfuscated <script type="application/json">["..."]</script>
+        const scriptRegex = /<script[^>]+type=["']application\/json["'][^>]*>\s*\[?\s*["']([^"'\[\]]+)["']\s*\]?\s*<\/script>/gi;
+        let sMatch: RegExpExecArray | null;
+        while ((sMatch = scriptRegex.exec(html)) !== null) {
+          const dec = decodeVoePayload(sMatch[1]);
+          if (dec) {
+            let finalM3u8 = dec;
+            try {
+              finalM3u8 = new URL(dec, currentUrl).toString();
+            } catch {}
+            this.registerStreamHostReferer(finalM3u8, currentUrl);
+            return {
+              ok: true,
+              m3u8Url: finalM3u8,
+              meta: {
+                qualities: ["1080p", "720p"],
+                qualityLinks: { "1080p": finalM3u8, "720p": finalM3u8 },
+                rawM3u8Url: finalM3u8,
+                referer: currentUrl,
+                headers: { Referer: currentUrl },
+              },
+            };
+          }
+        }
+
+        // 2. Direct / escaped .m3u8 links
+        const unescaped = html.replace(/\\\//g, "/");
+        const directMatches = unescaped.match(/https?:\/\/[^\s"'<>\\`]+?\.m3u8[^\s"'<>\\`]*/gi);
+        if (directMatches && directMatches.length > 0) {
+          const valid = directMatches.filter((u) => !u.includes("jwpltx") && !u.includes("ping.gif"));
+          const best = valid.find((u) => u.includes("master")) || valid[0];
+          if (best) {
+            this.registerStreamHostReferer(best, currentUrl);
+            return {
+              ok: true,
+              m3u8Url: best,
+              meta: {
+                qualities: ["1080p", "720p"],
+                qualityLinks: { "1080p": best, "720p": best },
+                rawM3u8Url: best,
+                referer: currentUrl,
+                headers: { Referer: currentUrl },
+              },
+            };
+          }
+        }
+
+        // 3. Follow JS redirect (window.location.href = 'https://...')
+        const jsRedirect =
+          html.match(/window\.location\.(?:href|replace)\s*(?:=|\()\s*['"](https?:\/\/[^'"]+)['"]/i) ||
+          html.match(/location\.href\s*=\s*['"](https?:\/\/[^'"]+)['"]/i);
+        if (jsRedirect && jsRedirect[1] && jsRedirect[1] !== currentUrl) {
+          refererUrl = currentUrl;
+          currentUrl = SmartStreamService.getEmbedUrl(jsRedirect[1].trim()) || jsRedirect[1].trim();
+          continue;
+        }
+        break;
+      }
+    } catch {}
+    return { ok: false };
   }
 
   /**
@@ -1282,6 +1482,33 @@ export class SmartStreamService {
   }
 
   /**
+   * Detects whether a URL is a temporary extracted HLS / CDN / proxy token URL
+   * that should never override a permanent hoster/provider URL (e.g. voe.sx, byseraguci.com, filemoon).
+   */
+  public static isTemporaryHlsUrl(rawUrl?: string | null): boolean {
+    if (!rawUrl || typeof rawUrl !== "string") return false;
+    const lower = rawUrl.toLowerCase().trim();
+    if (!lower) return false;
+    return (
+      lower.includes(".m3u8") ||
+      lower.includes("/proxy/m3u8") ||
+      lower.includes("/api/stream-proxy") ||
+      lower.includes("/proxy/ts") ||
+      lower.includes("sprintcdn") ||
+      lower.includes("owphbf") ||
+      lower.includes("r66nv9ed") ||
+      lower.includes("cdn-centaurus") ||
+      lower.includes("voe-network") ||
+      lower.includes("edgeon-bandwidth") ||
+      lower.includes("/engine/hls") ||
+      lower.includes("/hls2/") ||
+      lower.includes("master.txt") ||
+      lower.includes(".urlset") ||
+      /[?&](t|token|exp|expires|asn|sig|signature)=/i.test(lower)
+    );
+  }
+
+  /**
    * Resolves the best source URL for a server that may have separate per-quality links
    * (`1080p`, `720p`, `480p`, `360p`) or a single default URL.
    */
@@ -1310,6 +1537,8 @@ export class SmartStreamService {
         ? qualityLinksOrFallback
         : undefined;
 
+    const hasPermanentDefault = Boolean(defaultUrl && !this.isTemporaryHlsUrl(defaultUrl));
+
     const cleanLinks: Record<string, string> = {};
     if (qualityLinks && typeof qualityLinks === "object") {
       const order = ["1080p", "720p", "480p", "360p"];
@@ -1317,7 +1546,11 @@ export class SmartStreamService {
         const val = qualityLinks[k];
         if (typeof val === "string" && val.trim().length > 0 && k.toLowerCase() !== "default") {
           const sanitized = this.sanitizeStreamUrl(val);
-          if (sanitized) cleanLinks[k] = sanitized;
+          if (sanitized) {
+            // If qualityLinks entry is an expired/temporary CDN .m3u8 token and we have a permanent provider URL,
+            // heal the entry to use the permanent provider URL while preserving the quality key!
+            cleanLinks[k] = hasPermanentDefault && this.isTemporaryHlsUrl(sanitized) ? defaultUrl : sanitized;
+          }
         }
       }
       // Sort keys in standard resolution order

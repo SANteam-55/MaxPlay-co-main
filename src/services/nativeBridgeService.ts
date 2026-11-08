@@ -698,6 +698,7 @@ export class NativeBridgeService {
           duration: requestedDurationSec || 1440,
         };
 
+        const parseCapMs = requestedDurationSec > 0 ? 1200 : 250;
         const meta = await Promise.race([
           this.parseHlsManifestOnDevice(
             masterUrl,
@@ -706,7 +707,7 @@ export class NativeBridgeService {
             scrapeData.byseMeta,
             requestedDurationSec <= 0
           ),
-          new Promise<typeof fallbackMeta>((resolve) => setTimeout(() => resolve(fallbackMeta), 1200)),
+          new Promise<typeof fallbackMeta>((resolve) => setTimeout(() => resolve(fallbackMeta), parseCapMs)),
         ]);
 
         return {
@@ -889,8 +890,7 @@ export class NativeBridgeService {
             }
             if (!qualities.includes(qLabel)) {
               qualities.push(qLabel);
-              // Keep master m3u8Url when separate #EXT-X-MEDIA:TYPE=AUDIO tracks exist so audio is never lost
-              qualityLinks[qLabel] = audioLines.length > 0 ? m3u8Url : resolvedUrl;
+              qualityLinks[qLabel] = m3u8Url;
             }
           }
         }

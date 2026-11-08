@@ -75,71 +75,14 @@ class InbuiltStreamScraper(
 
         val backgroundExecutor = Executors.newCachedThreadPool()
 
-        // Caches verified responsive IPv4 address for SprintCDN round-robin hosts (10 min TTL)
-        private val sprintCdnWorkingIpCache = ConcurrentHashMap<String, Pair<java.net.InetAddress, Long>>()
-
         private val smartStreamDns = object : okhttp3.Dns {
             override fun lookup(hostname: String): List<java.net.InetAddress> {
                 val all = okhttp3.Dns.SYSTEM.lookup(hostname)
                 if (all.size <= 1) return all
-                val lowerHost = hostname.lowercase()
-                val isSprintCdn = lowerHost.contains("sprintcdn") ||
-                    lowerHost.contains("owphbf") ||
-                    lowerHost.contains("r66nv9ed") ||
-                    lowerHost.contains("n1mwq")
-
-                // Always prefer IPv4 over IPv6 for stream CDNs to avoid mobile IPv6 blackholes
+                // Prefer IPv4 over IPv6 for stream CDNs to avoid mobile IPv6 blackholes without raw TCP socket scans
                 val ipv4List = all.filterIsInstance<java.net.Inet4Address>()
                 val ipv6List = all.filter { it !is java.net.Inet4Address }
-                val ordered = if (ipv4List.isNotEmpty()) (ipv4List + ipv6List) else all
-
-                if (!isSprintCdn || ipv4List.size <= 1) {
-                    return ordered
-                }
-
-                val now = System.currentTimeMillis()
-                val cachedGood = sprintCdnWorkingIpCache[lowerHost]
-                if (cachedGood != null && cachedGood.second > now) {
-                    val goodAddr = cachedGood.first
-                    return listOf(goodAddr) + ordered.filter { it != goodAddr }
-                }
-
-                // Fast parallel TCP connect probe across SprintCDN candidate IPv4s (max 1.8s)
-                // to skip dead round-robin edge IPs that drop SYN packets
-                val winnerRef = AtomicReference<java.net.InetAddress?>(null)
-                val probeLatch = CountDownLatch(1)
-                val finishedCount = java.util.concurrent.atomic.AtomicInteger(0)
-                val candidates = ipv4List.take(4)
-
-                for (addr in candidates) {
-                    backgroundExecutor.execute {
-                        val sock = java.net.Socket()
-                        try {
-                            sock.connect(java.net.InetSocketAddress(addr, 443), 1800)
-                            if (winnerRef.compareAndSet(null, addr)) {
-                                probeLatch.countDown()
-                            }
-                        } catch (_: Exception) {
-                        } finally {
-                            try { sock.close() } catch (_: Exception) {}
-                            if (finishedCount.incrementAndGet() >= candidates.size) {
-                                probeLatch.countDown()
-                            }
-                        }
-                    }
-                }
-
-                try {
-                    probeLatch.await(1850, TimeUnit.MILLISECONDS)
-                } catch (_: Exception) {}
-
-                val winner = winnerRef.get()
-                if (winner != null) {
-                    sprintCdnWorkingIpCache[lowerHost] = Pair(winner, now + 10 * 60 * 1000L)
-                    return listOf(winner) + ordered.filter { it != winner }
-                }
-
-                return ordered
+                return if (ipv4List.isNotEmpty()) (ipv4List + ipv6List) else all
             }
         }
 
@@ -150,8 +93,8 @@ class InbuiltStreamScraper(
                 maxRequestsPerHost = 32
             })
             .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(16, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -576,7 +519,13 @@ class InbuiltStreamScraper(
                 }
             }
 
-            val baseCandidates = listOf(mappedOrigin, "https://byseraguci.com", "https://f16px.com", origin)
+            if (mappedOrigin != "https://byseraguci.com" && mappedOrigin != "https://f16px.com") {
+                try {
+                    metaLatch.await(250, TimeUnit.MILLISECONDS)
+                } catch (_: Exception) {}
+            }
+
+            val baseCandidates = listOf(mappedOrigin, "https://byseraguci.com", "https://f16px.com", origin, discoveredEmbedOrigin)
                 .filter { it.isNotBlank() }
                 .distinct()
 
@@ -843,7 +792,7 @@ class InbuiltStreamScraper(
 
                     if (!bestM3u8.isNullOrBlank()) {
                         try {
-                            metaLatch.await(450, TimeUnit.MILLISECONDS)
+                            metaLatch.await(120, TimeUnit.MILLISECONDS)
                         } catch (_: Exception) {}
 
                         val detectedAudios = org.json.JSONArray()
